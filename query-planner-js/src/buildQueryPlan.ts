@@ -29,17 +29,17 @@ import {
   OperationTypeNode,
   print,
   stripIgnoredCharacters,
+  DirectiveNode,
 } from 'graphql';
 import {
   Field,
   FieldSet,
-  groupByParentType,
   groupByResponseName,
   matchesField,
   selectionSetFromFieldSet,
-  Scope,
   debugPrintField,
   debugPrintFields,
+  groupByScope,
 } from './FieldSet';
 import {
   FetchNode,
@@ -54,6 +54,7 @@ import { getFieldDef, getResponseName } from './utilities/graphql';
 import { MultiMap } from './utilities/MultiMap';
 import { getFederationMetadataForType, getFederationMetadataForField } from './composedSchema';
 import { DebugLogger } from './utilities/debug';
+import { Scope } from './Scope';
 
 
 function stringIsTrue(str?: string) : boolean {
@@ -552,16 +553,18 @@ function splitFields(
   groupForField: (field: Field<GraphQLObjectType>) => FetchGroup,
 ) {
   for (const fieldsForResponseName of groupByResponseName(fields).values()) {
-    for (const [parentType, fieldsForParentType] of groupByParentType(fieldsForResponseName)) {
-      // Field nodes that share the same response name and parent type are guaranteed
-      // to have the same field name and arguments. We only need the other nodes when
-      // merging selection sets, to take node-specific subfields and directives
-      // into account.
+    for (const fieldsForScope of groupByScope(fieldsForResponseName).values()) {
+      // Field nodes that share the same response name and scope are guaranteed to have the same field name and
+      // arguments. We only need the other nodes when merging selection sets, to take node-specific subfields and
+      // directives into account.
 
-      debug.group(() => debugPrintFields(fieldsForParentType));
+      debug.group(() => debugPrintFields(fieldsForScope));
 
-      const field = fieldsForParentType[0];
+      // All the fields in fieldsForScope have the same scope, so that means the same parent type and possible runtime
+      // types, so we effectively can just use the first one and ignore the rest.
+      const field = fieldsForScope[0];
       const { scope, fieldDef } = field;
+      const parentType = scope.parentType;
 
       // We skip `__typename` for root types.
       if (fieldDef.name === TypeNameMetaFieldDef.name) {
@@ -597,7 +600,7 @@ function splitFields(
             scope as Scope<typeof parentType>,
             group,
             path,
-            fieldsForParentType,
+            fieldsForScope,
           ),
         );
         debug.groupEnd(() => `Updated fetch group: ${debugPrintGroup(group)}`);
@@ -629,7 +632,7 @@ function splitFields(
           const group = groupForField(field as Field<GraphQLObjectType>);
           debug.groupEnd(() => `Initial fetch group for fields: ${debugPrintGroup(group)}`);
           group.fields.push(
-            completeField(context, scope, group, path, fieldsForParentType)
+            completeField(context, scope, group, path, fieldsForScope)
           );
           debug.groupEnd(() => `Updated fetch group: ${debugPrintGroup(group)}`);
           continue;
@@ -675,7 +678,7 @@ function splitFields(
               field.fieldNode,
             );
 
-            const fieldsWithRuntimeParentType = fieldsForParentType.map(field => ({
+            const fieldsWithRuntimeParentType = fieldsForScope.map(field => ({
               ...field,
               fieldDef,
             }));
@@ -837,12 +840,10 @@ function collectFields(
         fields.push({ scope, fieldNode: selection, fieldDef });
         break;
       case Kind.INLINE_FRAGMENT: {
-        const newScope = context.newScope(getFragmentCondition(selection), scope);
+        const newScope = context.newScope(getFragmentCondition(selection), scope, selection.directives);
         if (newScope.possibleTypes.length === 0) {
           break;
         }
-
-        newScope.directives = selection.directives;
 
         collectFields(
           context,
@@ -1123,16 +1124,13 @@ export class QueryPlanningContext {
   newScope<TParent extends GraphQLCompositeType>(
     parentType: TParent,
     enclosingScope?: Scope<GraphQLCompositeType>,
+    directives?: ReadonlyArray<DirectiveNode>
   ): Scope<TParent> {
-    return {
-      parentType,
-      possibleTypes: enclosingScope
-        ? this.getPossibleTypes(parentType).filter(type =>
-            enclosingScope.possibleTypes.includes(type),
-          )
-        : this.getPossibleTypes(parentType),
-      enclosingScope,
+    let possibleTypes = this.getPossibleTypes(parentType);
+    if (enclosingScope) {
+        possibleTypes = possibleTypes.filter(type => enclosingScope.possibleTypes.includes(type))
     };
+    return new Scope(parentType, possibleTypes, enclosingScope, directives);
   }
 
   getBaseService(parentType: GraphQLObjectType): string | undefined {
@@ -1161,10 +1159,7 @@ export class QueryPlanningContext {
     const keyFields: FieldSet = [];
 
     keyFields.push({
-      scope: {
-        parentType,
-        possibleTypes: this.getPossibleTypes(parentType),
-      },
+      scope: this.newScope(parentType),
       fieldNode: typenameField,
       fieldDef: TypeNameMetaFieldDef,
     });

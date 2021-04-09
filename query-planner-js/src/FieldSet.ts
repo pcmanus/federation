@@ -7,11 +7,11 @@ import {
   Kind,
   SelectionNode,
   SelectionSetNode,
-  GraphQLObjectType,
   DirectiveNode,
 } from 'graphql';
 import { getResponseName } from './utilities/graphql';
 import { partition, groupBy } from './utilities/array';
+import { Scope } from './Scope';
 
 export interface Field<
   TParent extends GraphQLCompositeType = GraphQLCompositeType
@@ -32,36 +32,7 @@ export interface Field<
  */
 export function debugPrintField(field: Field) : string {
   const def = field.fieldDef;
-  return `(${def.name}: ${def.type})${debugPrintScope(field.scope)}`;
-}
-
-export interface Scope<TParent extends GraphQLCompositeType> {
-  parentType: TParent;
-  possibleTypes: ReadonlyArray<GraphQLObjectType>;
-  directives?: ReadonlyArray<DirectiveNode>
-  enclosingScope?: Scope<GraphQLCompositeType>;
-}
-
-/**
- * Provides a string representation of a field suitable for debugging.
- *
- * The format looks like '<A [A1, A2]>' where 'A' is the scope 'parentType' and '[A1, A2]' are the 'possibleTypes'.
- *
- * @param scope - the scope object to convert.
- * @param deepDebug - whether to also display enclosed scopes.
- * @return a string representation of the scope.
- */
-export function debugPrintScope<TParent extends GraphQLCompositeType>(
-  scope: Scope<TParent>, deepDebug: boolean = false) : string {
-  let enclosingStr = '';
-  if (scope.enclosingScope) {
-    if (deepDebug) {
-      enclosingStr = ' -> ' + debugPrintScope(scope.enclosingScope);
-    } else {
-      enclosingStr = ' ⋯'; // show an elipsis so we know there is an enclosing scope, but it's just not displayed.
-    }
-  }
-  return`<${scope.parentType} [${scope.possibleTypes}]${enclosingStr}>`;
+  return `(${def.name}: ${def.type})${field.scope.debugPrint()}`;
 }
 
 export type FieldSet = Field[];
@@ -103,6 +74,13 @@ export const groupByResponseName = groupBy<Field, string>(field =>
 
 export const groupByParentType = groupBy<Field, GraphQLCompositeType>(
   field => field.scope.parentType,
+);
+
+/**
+ * Groups fields by their scope "identity key" (@see Scope.identityKey()).
+ */
+export const groupByScope = groupBy<Field, string>(
+  field => field.scope.identityKey(),
 );
 
 export function selectionSetFromFieldSet(
