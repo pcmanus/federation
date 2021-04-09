@@ -7,7 +7,6 @@ export class Scope<TParent extends GraphQLCompositeType> {
   constructor(
     public readonly parentType: TParent,
     possibleTypes: ReadonlyArray<GraphQLObjectType>,
-    public readonly enclosingScope?: Scope<GraphQLCompositeType>,
     public readonly directives?: ReadonlyArray<DirectiveNode>) {
     // We need to sort the possible types to make our `identityKey()` method work.
     this.possibleTypes = [...possibleTypes].sort();
@@ -63,22 +62,13 @@ export class Scope<TParent extends GraphQLCompositeType> {
    * The format looks like '<A [A1, A2] {@x, @y}>' where 'A' is the scope 'parentType', '[A1, A2]' are the
    * 'possibleTypes' and '{@x, @y}' the potential directives.
    *
-   * @param deepDebug - whether to also display enclosed scopes.
    * @return a string representation of the scope.
    */
-  public debugPrint(deepDebug: boolean = false) : string {
-    let enclosingStr = '';
+  public debugPrint() : string {
     let directiveStr = '';
     if (this.directives) {
       directiveStr = ' {' + this.directives.map(d => '@' + d.name.value).join(', ') + '}';
     }
-    if (this.enclosingScope) {
-      if (deepDebug) {
-        enclosingStr = ' -> ' + this.enclosingScope.debugPrint(true);
-      } else {
-        enclosingStr = ' ⋯'; // show an elipsis so we know there is an enclosing scope, but it's just not displayed.
-      }
-    }
-    return`<${this.parentType} [${this.possibleTypes}]${directiveStr}${enclosingStr}>`;
+    return`<${this.parentType} [${this.possibleTypes}]${directiveStr}>`;
   }
 }

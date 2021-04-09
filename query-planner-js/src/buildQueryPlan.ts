@@ -1118,7 +1118,7 @@ export class QueryPlanningContext {
     if (enclosingScope) {
         possibleTypes = possibleTypes.filter(type => enclosingScope.possibleTypes.includes(type))
     };
-    return new Scope(parentType, possibleTypes, enclosingScope, directives);
+    return new Scope(parentType, possibleTypes, directives);
   }
 
   getBaseService(parentType: GraphQLObjectType): string | undefined {
