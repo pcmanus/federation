@@ -33,13 +33,13 @@ import {
 import {
   Field,
   FieldSet,
-  groupByParentType,
   groupByResponseName,
   matchesField,
   selectionSetFromFieldSet,
   Scope,
   debugPrintField,
   debugPrintFields,
+  groupByScope,
 } from './FieldSet';
 import {
   FetchNode,
@@ -552,16 +552,18 @@ function splitFields(
   groupForField: (field: Field<GraphQLObjectType>) => FetchGroup,
 ) {
   for (const fieldsForResponseName of groupByResponseName(fields).values()) {
-    for (const [parentType, fieldsForParentType] of groupByParentType(fieldsForResponseName)) {
-      // Field nodes that share the same response name and parent type are guaranteed
-      // to have the same field name and arguments. We only need the other nodes when
-      // merging selection sets, to take node-specific subfields and directives
-      // into account.
+    for (const fieldsForScope of groupByScope(fieldsForResponseName).values()) {
+      // Field nodes that share the same response name and scope are guaranteed to have the same field name and
+      // arguments. We only need the other nodes when merging selection sets, to take node-specific subfields and
+      // directives into account.
 
-      debug.group(() => debugPrintFields(fieldsForParentType));
+      debug.group(() => debugPrintFields(fieldsForScope));
 
-      const field = fieldsForParentType[0];
+      // All the fields in fieldsForScope have the same scope, so that means the same parent type and possible runtime
+      // types, so we effectively can just use the first one and ignore the rest.
+      const field = fieldsForScope[0];
       const { scope, fieldDef } = field;
+      const parentType = scope.parentType;
 
       // We skip `__typename` for root types.
       if (fieldDef.name === TypeNameMetaFieldDef.name) {
@@ -597,7 +599,7 @@ function splitFields(
             scope as Scope<typeof parentType>,
             group,
             path,
-            fieldsForParentType,
+            fieldsForScope,
           ),
         );
         debug.groupEnd(() => `Updated fetch group: ${debugPrintGroup(group)}`);
@@ -629,7 +631,7 @@ function splitFields(
           const group = groupForField(field as Field<GraphQLObjectType>);
           debug.groupEnd(() => `Initial fetch group for fields: ${debugPrintGroup(group)}`);
           group.fields.push(
-            completeField(context, scope, group, path, fieldsForParentType)
+            completeField(context, scope, group, path, fieldsForScope)
           );
           debug.groupEnd(() => `Updated fetch group: ${debugPrintGroup(group)}`);
           continue;
@@ -675,7 +677,7 @@ function splitFields(
               field.fieldNode,
             );
 
-            const fieldsWithRuntimeParentType = fieldsForParentType.map(field => ({
+            const fieldsWithRuntimeParentType = fieldsForScope.map(field => ({
               ...field,
               fieldDef,
             }));

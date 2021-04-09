@@ -9,6 +9,7 @@ import {
   SelectionSetNode,
   GraphQLObjectType,
   DirectiveNode,
+  ValueNode,
 } from 'graphql';
 import { getResponseName } from './utilities/graphql';
 import { partition, groupBy } from './utilities/array';
@@ -103,6 +104,44 @@ export const groupByResponseName = groupBy<Field, string>(field =>
 
 export const groupByParentType = groupBy<Field, GraphQLCompositeType>(
   field => field.scope.parentType,
+);
+
+function createValueKey(value: ValueNode) : string {
+  switch (value.kind) {
+    case 'Variable':
+      return value.name.value;
+    case 'IntValue':
+    case 'FloatValue':
+    case 'StringValue':
+    case 'EnumValue':
+      return value.value;
+    case 'BooleanValue':
+      return String(value.value);
+    case 'NullValue':
+      return "<null>";
+    case 'ListValue':
+      return value.values.map(createValueKey).join('-');
+    case 'ObjectValue':
+      return value.fields.map(f => f.name.value + '-' + createValueKey(f.value)).join('-');
+  }
+}
+
+function createDirectiveKey(directive: DirectiveNode) : string {
+  const argumentsKey = directive.arguments
+    ? directive.arguments.map(arg => arg.name.value + '-' + createValueKey(arg.value)).join('-')
+    : "";
+  return `${directive.name.value}-${argumentsKey}`;
+}
+
+function createScopeKey<TParent extends GraphQLCompositeType>(scope: Scope<TParent>) : string {
+  const directivesKey = scope.directives
+    ? scope.directives.map(createDirectiveKey).join('-')
+    : "";
+  return `${scope.parentType}-${scope.possibleTypes.join('-')}-${directivesKey}`;
+}
+
+export const groupByScope = groupBy<Field, string>(
+  field => createScopeKey(field.scope),
 );
 
 export function selectionSetFromFieldSet(
