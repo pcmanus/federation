@@ -829,9 +829,6 @@ function collectFields(
   scope: Scope<GraphQLCompositeType>,
   selectionSet: SelectionSetNode,
   fields: FieldSet = [],
-  visitedFragmentNames: { [fragmentName: string]: boolean } = Object.create(
-    null,
-  ),
 ): FieldSet {
   for (const selection of selectionSet.selections) {
     switch (selection.kind) {
@@ -850,7 +847,6 @@ function collectFields(
           newScope,
           selection.selectionSet,
           fields,
-          visitedFragmentNames,
         );
         break;
       }
@@ -867,17 +863,11 @@ function collectFields(
           continue;
         }
 
-        if (visitedFragmentNames[fragmentName]) {
-          continue;
-        }
-        visitedFragmentNames[fragmentName] = true;
-
         collectFields(
           context,
           newScope,
           fragment.selectionSet,
           fields,
-          visitedFragmentNames,
         );
         break;
     }
@@ -908,7 +898,6 @@ export function collectSubfields(
   fields: FieldSet,
 ): FieldSet {
   let subfields: FieldSet = [];
-  const visitedFragmentNames = Object.create(null);
 
   for (const field of fields) {
     const selectionSet = field.fieldNode.selectionSet;
@@ -919,7 +908,6 @@ export function collectSubfields(
         context.newScope(returnType),
         selectionSet,
         subfields,
-        visitedFragmentNames,
       );
     }
   }
