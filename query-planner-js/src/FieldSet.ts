@@ -1,4 +1,5 @@
 import {
+  DirectiveNode,
   FieldNode,
   getNamedType,
   GraphQLCompositeType,
@@ -7,16 +8,14 @@ import {
   Kind,
   SelectionNode,
   SelectionSetNode,
-  DirectiveNode,
 } from 'graphql';
 import { getResponseName } from './utilities/graphql';
-import { partition, groupBy } from './utilities/array';
+import { partition } from './utilities/array';
 import { Scope } from './Scope';
+import { groupBy } from './utilities/immutables';
 
-export interface Field<
-  TParent extends GraphQLCompositeType = GraphQLCompositeType
-> {
-  scope: Scope<TParent>;
+export interface Field {
+  scope: Scope;
   fieldNode: FieldNode;
   fieldDef: GraphQLField<any, any>;
 }
@@ -58,7 +57,7 @@ export function printFields(fields?: FieldSet) {
  */
 export function debugPrintFields(fields?: FieldSet) : string {
   if (!fields) return '[]';
-  return '[' + fields.map(debugPrintField).join(', ') + ']'
+  return '[' + fields.map(f => debugPrintField(f)).join(', ') + ']'
 }
 
 export function matchesField(field: Field) {
@@ -72,67 +71,67 @@ export const groupByResponseName = groupBy<Field, string>(field =>
   getResponseName(field.fieldNode)
 );
 
-export const groupByParentType = groupBy<Field, GraphQLCompositeType>(
-  field => field.scope.parentType,
-);
-
 /**
- * Groups fields by their scope "identity key" (@see Scope.identityKey()).
+ * Groups fields by their scope (not that the groupBy uses an immutable-js Map that ensures that using
+ * Scope as keys works properly (meaning that equality is by value)).
  */
-export const groupByScope = groupBy<Field, string>(
-  field => field.scope.identityKey(),
+export const groupByScope = groupBy<Field, Scope>(
+  field => field.scope,
 );
 
 export function selectionSetFromFieldSet(
   fields: FieldSet,
   parentType?: GraphQLCompositeType,
 ): SelectionSetNode {
-  return {
+  let node = {
     kind: Kind.SELECTION_SET,
-    selections: Array.from(groupByParentType(fields)).flatMap(
-      ([typeCondition, fieldsByParentType]: [
-        GraphQLCompositeType,
-        FieldSet,
-      ]) => {
-        const directives = fieldsByParentType[0].scope.directives;
-
+    selections: Array.from(groupByScope(fields).values()).flatMap(
+      (fieldsByScope: FieldSet) => {
+        const scope = fieldsByScope[0].scope;
         return wrapInInlineFragmentIfNeeded(
-          Array.from(groupByResponseName(fieldsByParentType).values()).map(
+          Array.from(groupByResponseName(fieldsByScope).values()).map(
             (fieldsByResponseName) => {
               return combineFields(fieldsByResponseName).fieldNode;
             },
           ),
-          typeCondition,
+          scope,
           parentType,
-          directives,
         );
       },
     ),
   };
+  return node;
 }
 
 function wrapInInlineFragmentIfNeeded(
   selections: SelectionNode[],
-  typeCondition: GraphQLCompositeType,
+  scope: Scope,
   parentType?: GraphQLCompositeType,
-  directives?: ReadonlyArray<DirectiveNode>
 ): SelectionNode[] {
-  return typeCondition === parentType
-    ? selections
-    : [
-        {
-          kind: Kind.INLINE_FRAGMENT,
-          typeCondition: {
-            kind: Kind.NAMED_TYPE,
-            name: {
-              kind: Kind.NAME,
-              value: typeCondition.name,
-            },
-          },
-        selectionSet: { kind: Kind.SELECTION_SET, selections },
-        directives
+  const shouldWrap = scope.enclosing || !parentType || scope.isStrictlyRefining(parentType);
+  const newSelections = shouldWrap ? wrapInInlineFragment(selections, scope.parentType, scope.directives) : selections;
+  return scope.enclosing ? wrapInInlineFragmentIfNeeded(newSelections, scope.enclosing, parentType) : newSelections;
+}
+
+function wrapInInlineFragment(
+  selections: SelectionNode[],
+  typeCondition: GraphQLCompositeType,
+  directives? : ReadonlyArray<DirectiveNode>
+): SelectionNode[] {
+  return [
+    {
+      kind: Kind.INLINE_FRAGMENT,
+      typeCondition: {
+        kind: Kind.NAMED_TYPE,
+        name: {
+          kind: Kind.NAME,
+          value: typeCondition.name,
         },
-      ];
+      },
+      selectionSet: { kind: Kind.SELECTION_SET, selections },
+      directives
+    },
+  ];
 }
 
 function combineFields(
