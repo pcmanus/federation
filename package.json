@@ -31,8 +31,8 @@
   "dependencies": {
     "@apollo/federation": "file:federation-js",
     "@apollo/gateway": "file:gateway-js",
-    "@apollo/query-planner": "file:query-planner-js",
     "@apollo/harmonizer": "file:harmonizer",
+    "@apollo/query-planner": "file:query-planner-js",
     "@apollographql/apollo-tools": "0.4.9",
     "apollo-federation-integration-testsuite": "file:federation-integration-testsuite-js"
   },
