@@ -1180,6 +1180,87 @@ describe('executeQueryPlan', () => {
     `);
   });
 
+  it(`breaks when a root type with a non-default type is also used in union`, async () => {
+    const subgraphA = {
+      name: 'A',
+      typeDefs: gql`
+        schema {
+          query: MyQuery
+        }
+
+        type MyQuery {
+          x: Int
+          z: OtherType
+        }
+
+        type OtherQuery {
+          w: String
+        }
+
+        union SomeQuery = MyQuery | OtherType
+
+        type OtherType {
+          a: SomeQuery
+        }
+      `
+    };
+    const subgraphB = {
+      name: 'B',
+      typeDefs: gql`
+        type Query {
+          y: String
+        }
+      `
+    };
+
+    ({ serviceMap, schema, queryPlanner } = getFederatedTestingSchema([subgraphA, subgraphB]));
+
+    const operationDocument = gql`
+      query {
+        z {
+          a {
+             ... on Query {
+               x
+             }
+          }
+        }
+      }
+    `;
+
+    const operationContext = buildOperationContext({
+      schema,
+      operationDocument,
+    });
+
+    const queryPlan = queryPlanner.buildQueryPlan(operationContext);
+
+    expect(queryPlan).toMatchInlineSnapshot(`
+      QueryPlan {
+        Fetch(service: "A") {
+          {
+            z {
+              a {
+                __typename
+                ... on Query {
+                  x
+                }
+              }
+            }
+          }
+        },
+      }
+    `);
+
+    const response = await executeQueryPlan(
+      queryPlan,
+      serviceMap,
+      buildRequestContext(),
+      operationContext,
+    );
+
+    expect(response.errors).toBeUndefined();
+  });
+
   describe('@inaccessible', () => {
     it(`should not include @inaccessible fields in introspection`, async () => {
       schema = buildComposedSchema(superGraphWithInaccessible);
