@@ -8,9 +8,9 @@ import {
   visit,
 } from 'graphql';
 import { fixtures } from '..';
-import { assert } from '@apollo/federation-internals';
+import { asFed2SubgraphDocument, assert } from '@apollo/federation-internals';
 
-const compositionResult = composeServices(fixtures);
+const compositionResult = composeServices(fixtures.map((f) => ({ ...f, typeDefs: asFed2SubgraphDocument(f.typeDefs)})));
 assert(!compositionResult.errors, () => `Unexpected errors composing test fixtures:\n${compositionResult.errors!.join('\n\n')}`);
 
 const parsed = parse(compositionResult.supergraphSdl);

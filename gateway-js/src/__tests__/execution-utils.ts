@@ -17,7 +17,7 @@ import { queryPlanSerializer, astSerializer } from 'apollo-federation-integratio
 import gql from 'graphql-tag';
 import { fixtures } from 'apollo-federation-integration-testsuite';
 import { composeServices } from '@apollo/composition';
-import { buildSchema, operationFromDocument, ServiceDefinition } from '@apollo/federation-internals';
+import { asFed2SubgraphDocument, buildSchema, operationFromDocument, ServiceDefinition } from '@apollo/federation-internals';
 
 const prettyFormat = require('pretty-format');
 
@@ -36,7 +36,7 @@ export function overrideResolversInService(
 
 export async function execute(
   request: GraphQLRequest,
-  services: ServiceDefinitionModule[] = fixtures,
+  services: ServiceDefinitionModule[] = asFed2Modules(fixtures),
   logger: Logger = console,
 ): Promise<GraphQLExecutionResult & { queryPlan: QueryPlan }> {
   const serviceMap = Object.fromEntries(
@@ -83,7 +83,14 @@ export function buildLocalService(modules: GraphQLSchemaModule[]) {
   return new LocalGraphQLDataSource(schema);
 }
 
-export function getFederatedTestingSchema(services: ServiceDefinitionModule[] = fixtures) {
+function asFed2Modules(services: ServiceDefinitionModule[]): ServiceDefinitionModule[] {
+  return services.map((s) => ({
+    ...s,
+    typeDefs: asFed2SubgraphDocument(s.typeDefs)
+  }));
+}
+
+export function getFederatedTestingSchema(services: ServiceDefinitionModule[] = asFed2Modules(fixtures)) {
   const compositionResult = composeServices(services);
   if (compositionResult.errors) {
     throw new GraphQLSchemaValidationError(compositionResult.errors);
