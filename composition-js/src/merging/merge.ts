@@ -820,7 +820,7 @@ class Merger {
   }
 
   private isOverride(sourceIdx: number, field: FieldDefinition<any>): boolean {
-    return this.metadata(sourceIdx).isFieldOverride(field);
+    return !!this.getOverrideDirective(field);
   }
 
   private getOverrideDirective(field: FieldDefinition<any>): Directive<FieldDefinition<any>> | undefined {
