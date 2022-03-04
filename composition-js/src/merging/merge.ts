@@ -819,7 +819,7 @@ class Merger {
     return this.metadata(sourceIdx).isFieldShareable(field);
   }
 
-  private isOverride(sourceIdx: number, field: FieldDefinition<any>): boolean {
+  private isOverride(_sourceIdx: number, field: FieldDefinition<any>): boolean {
     return !!this.getOverrideDirective(field);
   }
 
