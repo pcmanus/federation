@@ -140,7 +140,13 @@ export class JoinSpecDefinition extends FeatureDefinition {
     return this.directive(schema, 'implements');
   }
 
-  fieldDirective(schema: Schema): DirectiveDefinition<{graph: string, requires?: string, provides?: string, type?: string, external?: boolean}> {
+  fieldDirective(schema: Schema): DirectiveDefinition<{
+    graph: string,
+    requires?: string,
+    provides?: string,
+    type?: string,
+    external?: boolean,
+  }> {
     return this.directive(schema, 'field')!;
   }
 

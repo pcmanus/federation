@@ -15,7 +15,7 @@ function errors(r: CompositionResult): [string, string][] {
 
 // Returns [the supergraph schema, its api schema, the extracted subgraphs]
 function schemas(result: CompositionSuccess): [Schema, Schema, Subgraphs] {
-  // Note that we could user `result.schema`, but reparsing to ensure we don't lose anything with printing/parsing.
+  // Note that we could user `result.schema`, but re-parsing to ensure we don't lose anything with printing/parsing.
   const schema = buildSchema(result.supergraphSdl);
   expect(schema.isCoreSchema()).toBeTruthy();
   return [schema, schema.toAPISchema(), extractSubgraphsFromSupergraph(schema)];
@@ -67,7 +67,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphA')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -90,7 +90,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphB')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -151,7 +151,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphA')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -167,7 +167,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphB')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -240,7 +240,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphA')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -256,7 +256,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphB')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }
@@ -274,7 +274,7 @@ describe('basic type extensions', () => {
     expect(subgraphs.get('subgraphC')!.toString()).toMatchString(`
       schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
-        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
       {
         query: Query
       }

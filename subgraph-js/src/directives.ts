@@ -97,6 +97,16 @@ export const LinkDirective = new GraphQLDirective({
   },
 });
 
+export const OverrideDirective = new GraphQLDirective({
+  name: 'override',
+  locations: [DirectiveLocation.FIELD_DEFINITION],
+  args: {
+    from: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+  },
+});
+
 export const federationDirectives = [
   KeyDirective,
   ExtendsDirective,
@@ -105,6 +115,7 @@ export const federationDirectives = [
   ProvidesDirective,
   ShareableDirective,
   LinkDirective,
+  OverrideDirective,
 ];
 
 export function isFederationDirective(directive: GraphQLDirective): boolean {

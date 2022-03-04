@@ -56,6 +56,14 @@ export const shareableDirectiveSpec = createDirectiveSpecification({
   locations: [DirectiveLocation.OBJECT, DirectiveLocation.FIELD_DEFINITION],
 });
 
+export const overrideDirectiveSpec = createDirectiveSpecification({
+  name: 'override',
+  locations: [DirectiveLocation.OBJECT, DirectiveLocation.FIELD_DEFINITION],
+  argumentFct: (schema) => {
+    return [{ name: 'from', type: new NonNullType(schema.stringType()) }];
+  },
+});
+
 export const tagDirectiveSpec = createDirectiveSpecification({
   name:'tag',
   locations: tagLocations,
@@ -81,6 +89,7 @@ export const FEDERATION2_SPEC_DIRECTIVES = [
   providesDirectiveSpec,
   externalDirectiveSpec,
   shareableDirectiveSpec,
+  overrideDirectiveSpec,
   tagDirectiveSpec,
   extendsDirectiveSpec, // TODO: should we stop supporting that?
 ];

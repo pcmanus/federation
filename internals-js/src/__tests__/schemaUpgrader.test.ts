@@ -91,7 +91,7 @@ test('upgrade complex schema', () => {
   expect(res.subgraphs?.get('s1')?.toString()).toMatchString(`
     schema
       @link(url: "https://specs.apollo.dev/link/v1.0")
-      @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+      @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
     {
       query: Query
     }
@@ -148,7 +148,7 @@ test('update federation directive non-string arguments', () => {
   expect(res.subgraphs?.get('s')?.toString()).toMatchString(`
     schema
       @link(url: "https://specs.apollo.dev/link/v1.0")
-      @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@tag", "@extends"])
+      @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@requires", "@provides", "@external", "@shareable", "@override", "@tag", "@extends"])
     {
       query: Query
     }

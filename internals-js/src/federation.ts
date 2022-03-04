@@ -70,6 +70,7 @@ import {
   externalDirectiveSpec,
   extendsDirectiveSpec,
   shareableDirectiveSpec,
+  overrideDirectiveSpec,
   tagDirectiveSpec,
   FEDERATION2_SPEC_DIRECTIVES,
 } from "./federationSpec";
@@ -379,7 +380,7 @@ function isFieldSatisfyingInterface(field: FieldDefinition<ObjectType | Interfac
  */
 function validateInterfaceRuntimeImplementationFieldsTypes(
   itf: InterfaceType,
-  metadata: FederationMetadata, 
+  metadata: FederationMetadata,
   errorCollector: GraphQLError[],
 ): void {
   const requiresDirective = federationMetadata(itf.schema())?.requiresDirective();
@@ -486,6 +487,10 @@ export class FederationMetadata {
     return this.sharingPredicate()(field);
   }
 
+  isFieldOverride(field: FieldDefinition<any>): boolean {
+    return !!field.appliedDirectives.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name);
+  }
+
   federationDirectiveNameInSchema(name: string): string {
     if (this.isFed2Schema()) {
       const coreFeatures = this.schema.coreFeatures;
@@ -533,6 +538,10 @@ export class FederationMetadata {
     return this.getFederationDirective(keyDirectiveSpec.name);
   }
 
+  overrideDirective(): DirectiveDefinition<{fields: any}> {
+    return this.getFederationDirective(overrideDirectiveSpec.name);
+  }
+
   extendsDirective(): DirectiveDefinition<Record<string, never>> {
     return this.getFederationDirective(extendsDirectiveSpec.name);
   }
@@ -567,7 +576,9 @@ export class FederationMetadata {
       this.extendsDirective(),
     ];
     return this.isFed2Schema()
-      ? baseDirectives.concat(this.shareableDirective())
+      ? baseDirectives
+        .concat(this.shareableDirective())
+        .concat(this.overrideDirective())
       : baseDirectives;
   }
 
@@ -625,7 +636,7 @@ export class FederationBlueprint extends SchemaBlueprint {
     // Historically, federation 1 has accepted invalid schema, including some where the Query type included
     // the definition of `_entities` (so `_entities(representations: [_Any!]!): [_Entity]!`) but _without_
     // defining the `_Any` or `_Entity` type. So while we want to be stricter for fed2 (so this kind of
-    // really weird case can be fixed), we want fed2 to accept as much fed1 schema as possible. 
+    // really weird case can be fixed), we want fed2 to accept as much fed1 schema as possible.
     //
     // So, to avoid this problem, we ignore the _entities and _service fields if we parse them from
     // a fed1 input schema. Those will be added back anyway (along with the proper types) post-parsing.
