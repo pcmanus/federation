@@ -609,7 +609,7 @@ test('hints on inconsistent description for field', () => {
 });
 
 describe('hint tests related to the @override directive', () => {
-  it('hint when destination subgraph does not exist', () => {
+  it('hint when from subgraph does not exist', () => {
     const subgraph1 = gql`
       type Query {
         a: Int
