@@ -823,6 +823,18 @@ class Merger {
     return this.metadata(sourceIdx).isFieldOverride(field);
   }
 
+  private getOverrideDirective(field: FieldDefinition<any>): Directive<FieldDefinition<any>> | undefined {
+    let f = field;
+    while (f !== undefined) {
+      const directive = f.appliedDirectives?.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name);
+      if (directive) {
+        return directive;
+      }
+      f = f.parent;
+    }
+    return undefined;
+  }
+
   /**
    * Validates whether or not the use of the @override directive is correct.
    * return a list of subgraphs to ignore for the current field
@@ -849,7 +861,7 @@ class Merger {
       return {
         idx,
         name: this.names[idx],
-        overrideDirective: source.appliedDirectives.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name),
+        overrideDirective: this.getOverrideDirective(source),
       };
     }).reduce((acc: ReduceResultType, elem) => {
       if (elem !== undefined) {

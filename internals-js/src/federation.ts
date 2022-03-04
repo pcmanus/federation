@@ -488,7 +488,15 @@ export class FederationMetadata {
   }
 
   isFieldOverride(field: FieldDefinition<any>): boolean {
-    return !!field.appliedDirectives.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name);
+    let f = field;
+    while (f !== undefined) {
+      const directive = f.appliedDirectives?.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name);
+      if (directive) {
+        return true;
+      }
+      f = f.parent;
+    }
+    return false;
   }
 
   federationDirectiveNameInSchema(name: string): string {
