@@ -704,8 +704,10 @@ class Merger {
         }
       })
       .filter(subgraph => subgraph !== undefined);
+
     const filteredSources = sources
       .filter((_src, idx) => !typeOverriddenInSubgraphs.includes(this.subgraphs.values()[idx].name));
+
     this.addFieldsShallow(filteredSources, dest);
     if (!dest.hasFields()) {
       // This can happen for a type that existing in the subgraphs but had only non-merged fields
@@ -718,9 +720,10 @@ class Merger {
           this.hintOnInconsistentValueTypeField(filteredSources, dest, destField);
         }
         const subgraphFields = filteredSources.map(t => t?.field(destField.name));
+        const filteredFields = this.validateOverride(subgraphFields, destField);
 
-        this.mergeField(subgraphFields, destField);
-        this.validateFieldSharing(subgraphFields, destField);
+        this.mergeField(filteredFields, destField);
+        this.validateFieldSharing(filteredFields, destField);
       }
     }
   }
@@ -831,10 +834,6 @@ class Merger {
     return this.metadata(sourceIdx).isFieldShareable(field);
   }
 
-  private isOverride(sourceIdx: number, field: FieldDefinition<any>): boolean {
-    return !!this.getOverrideDirective(sourceIdx, field);
-  }
-
   private getOverrideDirective(sourceIdx: number, field: FieldDefinition<any>): Directive<any> | undefined {
     // Check the directive on the field, then on the enclosing type.
     const overrideDirectiveName = this.metadata(sourceIdx).overrideDirective().name;
@@ -935,12 +934,9 @@ class Merger {
   }
 
   private mergeField(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>) {
-    const filteredSources = this.validateOverride(sources, dest);
-
-    if (filteredSources.every((s, i) => s === undefined || this.isExternal(i, s))) {
-      const definingSubgraphs = filteredSources.map((source, i) => source ? this.names[i] : undefined).filter(s => s !== undefined) as string[];
-      console.log(definingSubgraphs);
-      const nodes = filteredSources.map(source => source?.sourceAST).filter(s => s !== undefined) as ASTNode[];
+    if (sources.every((s, i) => s === undefined || this.isExternal(i, s))) {
+      const definingSubgraphs = sources.map((source, i) => source ? this.names[i] : undefined).filter(s => s !== undefined) as string[];
+      const nodes = sources.map(source => source?.sourceAST).filter(s => s !== undefined) as ASTNode[];
       this.errors.push(ERRORS.EXTERNAL_MISSING_ON_BASE.err({
         message: `Field "${dest.coordinate}" is marked @external on all the subgraphs in which it is listed (${printSubgraphNames(definingSubgraphs)}).`,
         nodes
@@ -948,7 +944,7 @@ class Merger {
       return;
     }
 
-    const withoutExternal = this.withoutExternal(filteredSources);
+    const withoutExternal = this.withoutExternal(sources);
     // Note that we don't truly merge externals: we don't want, for instance, a field that is non-nullable everywhere to appear nullable in the
     // supergraph just because someone fat-fingered the type in an external definition. But after merging the non-external definitions, we
     // validate the external ones are consistent.
@@ -960,16 +956,15 @@ class Merger {
       this.mergeArgument(subgraphArgs, destArg);
     }
     const allTypesEqual = this.mergeTypeReference(withoutExternal, dest);
-    if (this.hasExternal(filteredSources)) {
-      this.validateExternalFields(filteredSources, dest, allTypesEqual);
+    if (this.hasExternal(sources)) {
+      this.validateExternalFields(sources, dest, allTypesEqual);
     }
-    this.addJoinField(filteredSources, dest, allTypesEqual);
+    this.addJoinField(sources, dest, allTypesEqual);
   }
 
   private validateFieldSharing(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>) {
     const shareableSources: number[] = [];
     const nonShareableSources: number[] = [];
-    const overrideSources: number[] = [];
     const allResolving: FieldDefinition<any>[] = [];
     for (const [i, source] of sources.entries()) {
       if (!source || this.isFullyExternal(i, source)) {
@@ -979,8 +974,6 @@ class Merger {
       allResolving.push(source);
       if (this.isShareable(i, source)) {
         shareableSources.push(i);
-      } else if (this.isOverride(i, source)) {
-        overrideSources.push(i);
       } else {
         nonShareableSources.push(i);
       }

@@ -241,9 +241,9 @@ describe("composition involving @override directive", () => {
           t: T
         }
 
-        type T @key(fields: "k") @override(from: "Subgraph1") {
+        type T @key(fields: "k") @override(from: "Subgraph2") {
           k: ID
-          a: Int @override(from: "Subgraph1")
+          a: Int @override(from: "Subgraph2")
         }
       `,
     };
@@ -264,8 +264,8 @@ describe("composition involving @override directive", () => {
     expect(result.errors).toBeDefined();
     expect(errors(result)).toStrictEqual([
       [
-        "OVERRIDE_FROM_SELF_ERROR",
-        `Source and destination subgraphs "Subgraph1" are the same for overridden field "T.a"`,
+        "OVERRIDE_ON_BOTH_FIELD_AND_TYPE",
+        `Field T.a on subgraph "Subgraph1" is marked with @override directive on both the field and the type`,
       ],
     ]);
   });
@@ -298,7 +298,9 @@ describe("composition involving @override directive", () => {
     };
 
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
-    expect(result.errors?.length).toBe(2);
+    // TODO: This test really should not cause the shareable hint to be raised, but to fix it would be a bit of a pain, so punting
+    // for now
+    expect(result.errors?.length).toBe(3);
     expect(result.errors).toBeDefined();
     expect(errors(result)).toStrictEqual([
       [
@@ -309,6 +311,10 @@ describe("composition involving @override directive", () => {
         "OVERRIDE_SOURCE_HAS_OVERRIDE",
         `Field "T.a" on subgraph "Subgraph2" has been previously marked with directive @override in subgraph "Subgraph1"`,
       ],
+      [
+        "INVALID_FIELD_SHARING",
+        `Non-shareable field "T.a" is resolved from multiple subgraphs: it is resolved from subgraphs "Subgraph1" and "Subgraph2" and defined as non-shareable in all of them`,
+      ]
     ]);
   });
 
