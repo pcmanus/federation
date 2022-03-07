@@ -56,6 +56,8 @@ import {
   linkIdentity,
   coreIdentity,
   FEDERATION_OPERATION_TYPES,
+  didYouMean,
+  suggestionList,
 } from "@apollo/federation-internals";
 import { ASTNode, GraphQLError, DirectiveLocation } from "graphql";
 import {
@@ -900,9 +902,14 @@ class Merger {
       const { overrideDirective } = subgraphMap[subgraphName];
       const sourceSubgraphName = overrideDirective?.arguments()?.from;
       if (!this.names.includes(sourceSubgraphName)) {
+        const suggestions = suggestionList(sourceSubgraphName, this.names as string[]);
+        let extraMsg = '';
+        if (suggestions.length > 0) {
+          extraMsg = didYouMean(suggestions);
+        }
         this.hints.push(new CompositionHint(
           hintFromSubgraphDoesNotExist,
-          `Source subgraph "${sourceSubgraphName}" for field "${coordinate}" on subgraph "${subgraphName}" does not exist`,
+          `Source subgraph "${sourceSubgraphName}" for field "${coordinate}" on subgraph "${subgraphName}" does not exist.${extraMsg}`,
           coordinate,
         ));
         subgraphsToIgnore.push(sourceSubgraphName);

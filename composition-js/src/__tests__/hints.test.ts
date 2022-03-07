@@ -629,7 +629,7 @@ describe('hint tests related to the @override directive', () => {
     const result = mergeDocuments(subgraph1, subgraph2);
     expect(result).toRaiseHint(
       hintFromSubgraphDoesNotExist,
-      `Source subgraph "Subgraph3" for field "T.f" on subgraph "Subgraph1" does not exist`,
+      `Source subgraph "Subgraph3" for field "T.f" on subgraph "Subgraph1" does not exist. Did you mean "Subgraph1" or "Subgraph2"?`,
     );
   });
 
