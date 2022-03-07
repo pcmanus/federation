@@ -318,7 +318,7 @@ const OVERRIDE_SOURCE_HAS_OVERRIDE = makeCodeDefinition(
 
 const OVERRIDE_ON_BOTH_FIELD_AND_TYPE = makeCodeDefinition(
   'OVERRIDE_ON_BOTH_FIELD_AND_TYPE',
-  'Field and type are both marked with @override directive. This is not currently supported',
+  'Field and type are both marked with @override directive. This is not currently supported.',
 );
 
 export const ERROR_CATEGORIES = {
