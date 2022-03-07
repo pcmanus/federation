@@ -912,7 +912,7 @@ class Merger {
         }));
       } else if (subgraphsWithOverride.includes(sourceSubgraphName)) {
         this.errors.push(ERRORS.OVERRIDE_SOURCE_HAS_OVERRIDE.err({
-          message: `Field "${coordinate}" on subgraph "${subgraphName}" has been previously marked with directive @override in subgraph "${sourceSubgraphName}"`,
+          message: `Field "${coordinate}" on subgraph "${subgraphName}" is also marked with directive @override in subgraph "${sourceSubgraphName}". Only one @override directive is allowed per field.`,
         }));
       } else if (subgraphMap[sourceSubgraphName] === undefined) {
         this.hints.push(new CompositionHint(

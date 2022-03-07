@@ -305,11 +305,11 @@ describe("composition involving @override directive", () => {
     expect(errors(result)).toStrictEqual([
       [
         "OVERRIDE_SOURCE_HAS_OVERRIDE",
-        `Field "T.a" on subgraph "Subgraph1" has been previously marked with directive @override in subgraph "Subgraph2"`,
+        `Field "T.a" on subgraph "Subgraph1" is also marked with directive @override in subgraph "Subgraph2". Only one @override directive is allowed per field.`,
       ],
       [
         "OVERRIDE_SOURCE_HAS_OVERRIDE",
-        `Field "T.a" on subgraph "Subgraph2" has been previously marked with directive @override in subgraph "Subgraph1"`,
+        `Field "T.a" on subgraph "Subgraph2" is also marked with directive @override in subgraph "Subgraph1". Only one @override directive is allowed per field.`,
       ],
       [
         "INVALID_FIELD_SHARING",
