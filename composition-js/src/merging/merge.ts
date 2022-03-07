@@ -83,6 +83,8 @@ import {
   hintOverriddenFieldCanBeRemoved,
 } from "../hints";
 
+type FieldOrUndefinedArray = (FieldDefinition<any> | undefined)[];
+
 const coreSpec = CORE_VERSIONS.latest();
 const joinSpec = JOIN_VERSIONS.latest();
 const tagSpec = TAG_VERSIONS.latest();
@@ -817,11 +819,11 @@ class Merger {
     return this.metadata(sourceIdx).isFieldFullyExternal(field);
   }
 
-  private withoutExternal(sources: (FieldDefinition<any> | undefined)[]): (FieldDefinition<any> | undefined)[] {
+  private withoutExternal(sources: FieldOrUndefinedArray): FieldOrUndefinedArray {
     return sources.map((s, i) => s !== undefined && this.isExternal(i, s) ? undefined : s);
   }
 
-  private hasExternal(sources: (FieldDefinition<any> | undefined)[]): boolean {
+  private hasExternal(sources: FieldOrUndefinedArray): boolean {
     return sources.some((s, i) => s !== undefined && this.isExternal(i, s));
   }
 
@@ -859,8 +861,9 @@ class Merger {
   /**
    * Validates whether or not the use of the @override directive is correct.
    * return a list of subgraphs to ignore for the current field
+   * return value is a list of fields that has been filtered to ignore overriden fields
    */
-  private validateOverride(sources: (FieldDefinition<any> | undefined)[], { coordinate }: FieldDefinition<any>): string[] {
+  private validateOverride(sources: FieldOrUndefinedArray, { coordinate }: FieldDefinition<any>): FieldOrUndefinedArray {
     // For any field, we can't have more than one @override directive
     type MappedValue = {
       idx: number,
@@ -903,6 +906,7 @@ class Merger {
           `Source subgraph "${sourceSubgraphName}" for field "${coordinate}" on subgraph "${subgraphName}" does not exist`,
           coordinate,
         ));
+        subgraphsToIgnore.push(sourceSubgraphName);
       } else if (sourceSubgraphName === subgraphName) {
         this.errors.push(ERRORS.OVERRIDE_FROM_SELF_ERROR.err({
           message: `Source and destination subgraphs "${sourceSubgraphName}" are the same for overridden field "${coordinate}"`,
@@ -917,22 +921,26 @@ class Merger {
           `Field "${coordinate}" on subgraph "${subgraphName}" no longer exists in the from subgraph. The @override directive can be removed.`,
           coordinate,
         ));
+        subgraphsToIgnore.push(sourceSubgraphName);
       } else {
         this.hints.push(new CompositionHint(
           hintOverriddenFieldCanBeRemoved,
           `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
           coordinate,
         ));
+        subgraphsToIgnore.push(sourceSubgraphName);
       }
-      subgraphsToIgnore.push(sourceSubgraphName);
     });
-    return subgraphsToIgnore;
+    return sources.map((source, idx) => (!source || subgraphsToIgnore.includes(this.subgraphs.values()[idx].name)) ? undefined : source);
   }
 
-  private mergeField(sources: (FieldDefinition<any> | undefined)[], dest: FieldDefinition<any>) {
-    if (sources.every((s, i) => s === undefined || this.isExternal(i, s))) {
-      const definingSubgraphs = sources.map((source, i) => source ? this.names[i] : undefined).filter(s => s !== undefined) as string[];
-      const nodes = sources.map(source => source?.sourceAST).filter(s => s !== undefined) as ASTNode[];
+  private mergeField(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>) {
+    const filteredSources = this.validateOverride(sources, dest);
+
+    if (filteredSources.every((s, i) => s === undefined || this.isExternal(i, s))) {
+      const definingSubgraphs = filteredSources.map((source, i) => source ? this.names[i] : undefined).filter(s => s !== undefined) as string[];
+      console.log(definingSubgraphs);
+      const nodes = filteredSources.map(source => source?.sourceAST).filter(s => s !== undefined) as ASTNode[];
       this.errors.push(ERRORS.EXTERNAL_MISSING_ON_BASE.err({
         message: `Field "${dest.coordinate}" is marked @external on all the subgraphs in which it is listed (${printSubgraphNames(definingSubgraphs)}).`,
         nodes
@@ -940,7 +948,7 @@ class Merger {
       return;
     }
 
-    const withoutExternal = this.withoutExternal(sources);
+    const withoutExternal = this.withoutExternal(filteredSources);
     // Note that we don't truly merge externals: we don't want, for instance, a field that is non-nullable everywhere to appear nullable in the
     // supergraph just because someone fat-fingered the type in an external definition. But after merging the non-external definitions, we
     // validate the external ones are consistent.
@@ -952,14 +960,13 @@ class Merger {
       this.mergeArgument(subgraphArgs, destArg);
     }
     const allTypesEqual = this.mergeTypeReference(withoutExternal, dest);
-    if (this.hasExternal(sources)) {
-      this.validateExternalFields(sources, dest, allTypesEqual);
+    if (this.hasExternal(filteredSources)) {
+      this.validateExternalFields(filteredSources, dest, allTypesEqual);
     }
-    const overrideFromSubgraph = this.validateOverride(sources, dest);
-    this.addJoinField(sources, dest, allTypesEqual, overrideFromSubgraph);
+    this.addJoinField(filteredSources, dest, allTypesEqual);
   }
 
-  private validateFieldSharing(sources: (FieldDefinition<any> | undefined)[], dest: FieldDefinition<any>) {
+  private validateFieldSharing(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>) {
     const shareableSources: number[] = [];
     const nonShareableSources: number[] = [];
     const overrideSources: number[] = [];
@@ -991,7 +998,7 @@ class Merger {
     }
   }
 
-  private validateExternalFields(sources: (FieldDefinition<any> | undefined)[], dest: FieldDefinition<any>, allTypesEqual: boolean) {
+  private validateExternalFields(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>, allTypesEqual: boolean) {
     let hasInvalidTypes = false;
     const invalidArgsPresence = new Set<string>();
     const invalidArgsTypes = new Set<string>();
@@ -1073,7 +1080,6 @@ class Merger {
     sources: (T | undefined)[],
     parentName: string,
     allTypesEqual: boolean,
-    subgraphsToSkip: string[],
   ): boolean {
     // If not all the types are equal, then we need to put a join__field to preserve the proper type information.
     if (!allTypesEqual) {
@@ -1084,7 +1090,6 @@ class Merger {
     //   1) the field exists in all sources having the field parent type,
     //   2) none of the field instance has a @requires or @provides.
     //   3) none of the field is @external.
-    //   4) the field is not overridden in any subgraph.
     for (const [idx, source] of sources.entries()) {
       if (source) {
         const sourceMeta = this.subgraphs.values()[idx].metadata();
@@ -1102,16 +1107,15 @@ class Merger {
       }
     }
 
-    return subgraphsToSkip.length > 0;
+    return false;
   }
 
   private addJoinField<T extends FieldDefinition<ObjectType | InterfaceType> | InputFieldDefinition>(
     sources: (T | undefined)[],
     dest: T,
     allTypesEqual: boolean,
-    subgraphsToSkip: string[] = [],
   ) {
-    if (!this.needsJoinField(sources, dest.parent.name, allTypesEqual, subgraphsToSkip)) {
+    if (!this.needsJoinField(sources, dest.parent.name, allTypesEqual)) {
       return;
     }
     const joinFieldDirective = joinSpec.fieldDirective(this.merged);
@@ -1123,15 +1127,13 @@ class Merger {
       const external = this.isExternal(idx, source);
       const sourceMeta = this.subgraphs.values()[idx].metadata();
       const name = this.joinSpecName(idx);
-      if (!subgraphsToSkip.includes(this.names[idx])) {
-        dest.applyDirective(joinFieldDirective, {
-          graph: name,
-          requires: this.getFieldSet(source, sourceMeta.requiresDirective()),
-          provides: this.getFieldSet(source, sourceMeta.providesDirective()),
-          type: allTypesEqual ? undefined : source.type?.toString(),
-          external: external ? true : undefined,
-        });
-      }
+      dest.applyDirective(joinFieldDirective, {
+        graph: name,
+        requires: this.getFieldSet(source, sourceMeta.requiresDirective()),
+        provides: this.getFieldSet(source, sourceMeta.providesDirective()),
+        type: allTypesEqual ? undefined : source.type?.toString(),
+        external: external ? true : undefined,
+      });
     }
   }
 
