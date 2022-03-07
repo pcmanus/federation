@@ -21,6 +21,7 @@ describe("composition involving @override directive", () => {
         type T @key(fields: "k") @override(from: "Subgraph2") {
           k: ID
           a: Int
+          b: Int
         }
       `,
     };
@@ -32,6 +33,7 @@ describe("composition involving @override directive", () => {
         type T @key(fields: "k") {
           k: ID
           a: Int
+          c: Int
         }
       `,
     };
@@ -89,11 +91,12 @@ describe("composition involving @override directive", () => {
       {
         k: ID @join__field(graph: SUBGRAPH1)
         a: Int @join__field(graph: SUBGRAPH1)
+        b: Int @join__field(graph: SUBGRAPH1)
       }"
     `);
   });
 
-  it("@override but not yet overriden", () => {
+  it("@override single field.", () => {
     const subgraph1 = {
       name: "Subgraph1",
       url: "https://Subgraph1",
@@ -221,7 +224,45 @@ describe("composition involving @override directive", () => {
     expect(errors(result)).toStrictEqual([
       [
         "OVERRIDE_FROM_SELF_ERROR",
-        `Source and destination subgraphs 'Subgraph1' the same for overridden field 'T.a'`,
+        `Source and destination subgraphs "Subgraph1" are the same for overridden field "T.a"`,
+      ],
+    ]);
+  });
+
+  it("override in both type and field error", () => {
+    const subgraph1 = {
+      name: "Subgraph1",
+      url: "https://Subgraph1",
+      typeDefs: gql`
+        type Query {
+          t: T
+        }
+
+        type T @key(fields: "k") @override(from: "Subgraph1") {
+          k: ID
+          a: Int @override(from: "Subgraph1")
+        }
+      `,
+    };
+
+    const subgraph2 = {
+      name: "Subgraph2",
+      url: "https://Subgraph2",
+      typeDefs: gql`
+        type T @key(fields: "k") {
+          k: ID
+          a: Int
+        }
+      `,
+    };
+
+    const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
+    expect(result.errors?.length).toBe(1);
+    expect(result.errors).toBeDefined();
+    expect(errors(result)).toStrictEqual([
+      [
+        "OVERRIDE_FROM_SELF_ERROR",
+        `Source and destination subgraphs "Subgraph1" are the same for overridden field "T.a"`,
       ],
     ]);
   });
@@ -259,11 +300,11 @@ describe("composition involving @override directive", () => {
     expect(errors(result)).toStrictEqual([
       [
         "OVERRIDE_SOURCE_HAS_OVERRIDE",
-        `Field 'T.a' on subgraph 'Subgraph1' has been previously marked with directive @override in subgraph 'Subgraph2'`,
+        `Field "T.a" on subgraph "Subgraph1" has been previously marked with directive @override in subgraph "Subgraph2"`,
       ],
       [
         "OVERRIDE_SOURCE_HAS_OVERRIDE",
-        `Field 'T.a' on subgraph 'Subgraph2' has been previously marked with directive @override in subgraph 'Subgraph1'`,
+        `Field "T.a" on subgraph "Subgraph2" has been previously marked with directive @override in subgraph "Subgraph1"`,
       ],
     ]);
   });

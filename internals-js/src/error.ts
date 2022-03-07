@@ -308,12 +308,17 @@ const SATISFIABILITY_ERROR = makeCodeDefinition(
 
 const OVERRIDE_FROM_SELF_ERROR = makeCodeDefinition(
   'OVERRIDE_FROM_SELF_ERROR',
-  'From location of field with `@override` directive is its own subgraph.',
+  'Field with `@override` directive has "from" location that references its own subgraph.',
 );
 
 const OVERRIDE_SOURCE_HAS_OVERRIDE = makeCodeDefinition(
   'OVERRIDE_SOURCE_HAS_OVERRIDE',
   'Field which is overridden to another subgraph is also marked @override.',
+);
+
+const OVERRIDE_ON_BOTH_FIELD_AND_TYPE = makeCodeDefinition(
+  'OVERRIDE_ON_BOTH_FIELD_AND_TYPE',
+  'Field and type are both marked with @override directive. This is not currently supported',
 );
 
 export const ERROR_CATEGORIES = {
@@ -372,6 +377,7 @@ export const ERRORS = {
   SATISFIABILITY_ERROR,
   OVERRIDE_FROM_SELF_ERROR,
   OVERRIDE_SOURCE_HAS_OVERRIDE,
+  OVERRIDE_ON_BOTH_FIELD_AND_TYPE,
 };
 
 const codeDefByCode = Object.values(ERRORS).reduce((obj: {[code: string]: ErrorCodeDefinition}, codeDef: ErrorCodeDefinition) => { obj[codeDef.code] = codeDef; return obj; }, {});

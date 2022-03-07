@@ -629,7 +629,7 @@ describe('hint tests related to the @override directive', () => {
     const result = mergeDocuments(subgraph1, subgraph2);
     expect(result).toRaiseHint(
       hintFromSubgraphDoesNotExist,
-      `Source subgraph 'Subgraph3' for field 'T.f' on subgraph 'Subgraph1' does not exist`,
+      `Source subgraph "Subgraph3" for field "T.f" on subgraph "Subgraph1" does not exist`,
     );
   });
 
@@ -653,7 +653,7 @@ describe('hint tests related to the @override directive', () => {
     const result = mergeDocuments(subgraph1, subgraph2);
     expect(result).toRaiseHint(
       hintOverrideDirectiveCanBeRemoved,
-      `Field 'T.f' on subgraph 'Subgraph1' no longer exists in the from subgraph. The @override directive can be removed.`,
+      `Field "T.f" on subgraph "Subgraph1" no longer exists in the from subgraph. The @override directive can be removed.`,
     );
   });
 
@@ -678,7 +678,7 @@ describe('hint tests related to the @override directive', () => {
     const result = mergeDocuments(subgraph1, subgraph2);
     expect(result).toRaiseHint(
       hintOverriddenFieldCanBeRemoved,
-      `Field 'T.f' on subgraph 'Subgraph2' has been overridden. Consider removing it.`,
+      `Field "T.f" on subgraph "Subgraph2" is overridden. Consider removing it.`,
     );
   });
 });

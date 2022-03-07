@@ -55,7 +55,6 @@ import {
   federationIdentity,
   linkIdentity,
   coreIdentity,
-  overrideDirectiveSpec,
   FEDERATION_OPERATION_TYPES,
 } from "@apollo/federation-internals";
 import { ASTNode, GraphQLError, DirectiveLocation } from "graphql";
@@ -694,8 +693,18 @@ class Merger {
   private mergeObject(sources: (ObjectType | undefined)[], dest: ObjectType) {
     const isEntity = this.hintOnInconsistentEntity(sources, dest);
     const isValueType = !isEntity && !dest.isRootType();
-
-    this.addFieldsShallow(sources, dest);
+    const typeOverriddenInSubgraphs = sources
+      .map((src, idx) => {
+        if (src) {
+          const overrideDirectiveName = this.metadata(idx).overrideDirective().name;
+          const overrideDirective = src.appliedDirectives.find(d => d.name === overrideDirectiveName);
+          return overrideDirective?.arguments()?.from;
+        }
+      })
+      .filter(subgraph => subgraph !== undefined);
+    const filteredSources = sources
+      .filter((_src, idx) => !typeOverriddenInSubgraphs.includes(this.subgraphs.values()[idx].name));
+    this.addFieldsShallow(filteredSources, dest);
     if (!dest.hasFields()) {
       // This can happen for a type that existing in the subgraphs but had only non-merged fields
       // (currently, this can only be the 'Query' type, in the rare case where the federated schema
@@ -704,9 +713,10 @@ class Merger {
     } else {
       for (const destField of dest.fields()) {
         if (isValueType) {
-          this.hintOnInconsistentValueTypeField(sources, dest, destField);
+          this.hintOnInconsistentValueTypeField(filteredSources, dest, destField);
         }
-        const subgraphFields = sources.map(t => t?.field(destField.name));
+        const subgraphFields = filteredSources.map(t => t?.field(destField.name));
+
         this.mergeField(subgraphFields, destField);
         this.validateFieldSharing(subgraphFields, destField);
       }
@@ -819,18 +829,29 @@ class Merger {
     return this.metadata(sourceIdx).isFieldShareable(field);
   }
 
-  private isOverride(_sourceIdx: number, field: FieldDefinition<any>): boolean {
-    return !!this.getOverrideDirective(field);
+  private isOverride(sourceIdx: number, field: FieldDefinition<any>): boolean {
+    return !!this.getOverrideDirective(sourceIdx, field);
   }
 
-  private getOverrideDirective(field: FieldDefinition<any>): Directive<FieldDefinition<any>> | undefined {
-    let f = field;
-    while (f !== undefined) {
-      const directive = f.appliedDirectives?.find(directive => directive.definition && directive.definition.name === overrideDirectiveSpec.name);
-      if (directive) {
-        return directive;
+  private getOverrideDirective(sourceIdx: number, field: FieldDefinition<any>): Directive<any> | undefined {
+    // Check the directive on the field, then on the enclosing type.
+    const overrideDirectiveName = this.metadata(sourceIdx).overrideDirective().name;
+    const fieldOverrideDirective = field.appliedDirectives.find(d => d.name === overrideDirectiveName);
+    const parent: FieldDefinition<any> | undefined = field.parent;
+    if (parent) { // should always be true
+      const parentOverrideDirective = parent.appliedDirectives.find(d => d.name === overrideDirectiveName);
+
+      // if both directives are present, raise an error
+      if (fieldOverrideDirective && parentOverrideDirective) {
+        this.errors.push(ERRORS.OVERRIDE_ON_BOTH_FIELD_AND_TYPE.err({
+          message: `Field ${field.coordinate} on subgraph "${this.subgraphs.values()[sourceIdx].name}" is marked with @override directive on both the field and the type`,
+        }));
+      } else if (fieldOverrideDirective || parentOverrideDirective) {
+        // TODO: The commented code seems like what we want based on code review comments, but it doesn't work.
+        // if (field.ofExtension === parent.ofExtension) {
+        return fieldOverrideDirective ?? parentOverrideDirective; // only one of them is not undefined, but this will return the one we want
+        // }
       }
-      f = f.parent;
     }
     return undefined;
   }
@@ -848,58 +869,58 @@ class Merger {
     };
 
     type ReduceResultType = {
-      subgraphsWithMoving: string[],
+      subgraphsWithOverride: string[],
       subgraphMap: { [key: string]: MappedValue },
     };
 
     const subgraphsToIgnore: string[] = [];
     // convert sources to a map so we don't have to keep scanning through the array to find a source
-    const { subgraphsWithMoving, subgraphMap } = sources.map((source, idx) => {
+    const { subgraphsWithOverride, subgraphMap } = sources.map((source, idx) => {
       if (!source) {
         return undefined;
       }
       return {
         idx,
         name: this.names[idx],
-        overrideDirective: this.getOverrideDirective(source),
+        overrideDirective: this.getOverrideDirective(idx, source),
       };
     }).reduce((acc: ReduceResultType, elem) => {
       if (elem !== undefined) {
         acc.subgraphMap[elem.name] = elem;
         if (elem.overrideDirective !== undefined) {
-          acc.subgraphsWithMoving.push(elem.name);
+          acc.subgraphsWithOverride.push(elem.name);
         }
       }
       return acc;
-    }, { subgraphsWithMoving: [], subgraphMap: {} });
+    }, { subgraphsWithOverride: [], subgraphMap: {} });
 
-    subgraphsWithMoving.forEach((subgraphName) => {
+    subgraphsWithOverride.forEach((subgraphName) => {
       const { overrideDirective } = subgraphMap[subgraphName];
       const sourceSubgraphName = overrideDirective?.arguments()?.from;
       if (!this.names.includes(sourceSubgraphName)) {
         this.hints.push(new CompositionHint(
           hintFromSubgraphDoesNotExist,
-          `Source subgraph '${sourceSubgraphName}' for field '${coordinate}' on subgraph '${subgraphName}' does not exist`,
+          `Source subgraph "${sourceSubgraphName}" for field "${coordinate}" on subgraph "${subgraphName}" does not exist`,
           coordinate,
         ));
       } else if (sourceSubgraphName === subgraphName) {
         this.errors.push(ERRORS.OVERRIDE_FROM_SELF_ERROR.err({
-          message: `Source and destination subgraphs '${sourceSubgraphName}' the same for overridden field '${coordinate}'`,
+          message: `Source and destination subgraphs "${sourceSubgraphName}" are the same for overridden field "${coordinate}"`,
         }));
-      } else if (subgraphsWithMoving.includes(sourceSubgraphName)) {
+      } else if (subgraphsWithOverride.includes(sourceSubgraphName)) {
         this.errors.push(ERRORS.OVERRIDE_SOURCE_HAS_OVERRIDE.err({
-          message: `Field '${coordinate}' on subgraph '${subgraphName}' has been previously marked with directive @override in subgraph '${sourceSubgraphName}'`,
+          message: `Field "${coordinate}" on subgraph "${subgraphName}" has been previously marked with directive @override in subgraph "${sourceSubgraphName}"`,
         }));
       } else if (subgraphMap[sourceSubgraphName] === undefined) {
         this.hints.push(new CompositionHint(
           hintOverrideDirectiveCanBeRemoved,
-          `Field '${coordinate}' on subgraph '${subgraphName}' no longer exists in the from subgraph. The @override directive can be removed.`,
+          `Field "${coordinate}" on subgraph "${subgraphName}" no longer exists in the from subgraph. The @override directive can be removed.`,
           coordinate,
         ));
       } else {
         this.hints.push(new CompositionHint(
           hintOverriddenFieldCanBeRemoved,
-          `Field '${coordinate}' on subgraph '${sourceSubgraphName}' has been overridden. Consider removing it.`,
+          `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
           coordinate,
         ));
       }
@@ -1063,7 +1084,7 @@ class Merger {
     //   1) the field exists in all sources having the field parent type,
     //   2) none of the field instance has a @requires or @provides.
     //   3) none of the field is @external.
-    //   4) we are skipping a subgraph
+    //   4) the field is not overridden in any subgraph.
     for (const [idx, source] of sources.entries()) {
       if (source) {
         const sourceMeta = this.subgraphs.values()[idx].metadata();
