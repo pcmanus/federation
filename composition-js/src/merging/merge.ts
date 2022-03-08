@@ -699,16 +699,13 @@ class Merger {
     const isValueType = !isEntity && !dest.isRootType();
     const typeOverriddenInSubgraphs = sources
       .map((src, idx) => {
-        if (src) {
-          const overrideDirectiveName = this.metadata(idx).overrideDirective().name;
-          const overrideDirective = src.appliedDirectives.find(d => d.name === overrideDirectiveName);
-          return overrideDirective?.arguments()?.from;
-        }
+        const overrideDirective = src?.appliedDirectivesOf(this.metadata(idx).overrideDirective()).pop();
+        return overrideDirective?.arguments()?.from;
       })
       .filter(subgraph => subgraph !== undefined);
 
     const filteredSources = sources
-      .filter((_src, idx) => !typeOverriddenInSubgraphs.includes(this.subgraphs.values()[idx].name));
+      .filter((_src, idx) => !typeOverriddenInSubgraphs.includes(this.names[idx]));
 
     this.addFieldsShallow(filteredSources, dest);
     if (!dest.hasFields()) {
@@ -838,23 +835,23 @@ class Merger {
 
   private getOverrideDirective(sourceIdx: number, field: FieldDefinition<any>): Directive<any> | undefined {
     // Check the directive on the field, then on the enclosing type.
-    const overrideDirectiveName = this.metadata(sourceIdx).overrideDirective().name;
-    const fieldOverrideDirective = field.appliedDirectives.find(d => d.name === overrideDirectiveName);
-    const parent: FieldDefinition<any> | undefined = field.parent;
-    if (parent) { // should always be true
-      const parentOverrideDirective = parent.appliedDirectives.find(d => d.name === overrideDirectiveName);
+    const metadata = this.metadata(sourceIdx);
+    const overrideDirective = metadata.isFed2Schema() ? metadata.overrideDirective() : undefined;
+    const allFieldOverrides = overrideDirective ? field.appliedDirectivesOf(overrideDirective) : [];
+    const overrideOnField = allFieldOverrides.find(d => d.ofExtension() === field.ofExtension());
 
-      // if both directives are present, raise an error
-      if (fieldOverrideDirective && parentOverrideDirective) {
-        this.errors.push(ERRORS.OVERRIDE_ON_BOTH_FIELD_AND_TYPE.err({
-          message: `Field ${field.coordinate} on subgraph "${this.subgraphs.values()[sourceIdx].name}" is marked with @override directive on both the field and the type`,
-        }));
-      } else if (fieldOverrideDirective || parentOverrideDirective) {
-        // TODO: The commented code seems like what we want based on code review comments, but it doesn't work.
-        // if (field.ofExtension === parent.ofExtension) {
-        return fieldOverrideDirective ?? parentOverrideDirective; // only one of them is not undefined, but this will return the one we want
-        // }
-      }
+    const type = field.parent;
+    assert(type, 'Field must have a parent');
+    const allTypeOverrides: Directive<any>[] = overrideDirective ? type.appliedDirectivesOf(overrideDirective) : [];
+    const overrideOnType = allTypeOverrides.find((d) => d.ofExtension() === type.ofExtension);
+
+    // if both directives are present, raise an error
+    if (overrideOnField && overrideOnType) {
+      this.errors.push(ERRORS.OVERRIDE_ON_BOTH_FIELD_AND_TYPE.err({
+        message: `Field "${field.coordinate}" on subgraph "${this.names[sourceIdx]}" is marked with @override directive on both the field and the type`,
+      }));
+    } else if (overrideOnField || overrideOnType) {
+      return overrideOnField ?? overrideOnType; // only one of them is not undefined, but this will return the one we want
     }
     return undefined;
   }
@@ -937,7 +934,7 @@ class Merger {
         subgraphsToIgnore.push(sourceSubgraphName);
       }
     });
-    return sources.map((source, idx) => (!source || subgraphsToIgnore.includes(this.subgraphs.values()[idx].name)) ? undefined : source);
+    return sources.map((source, idx) => (!source || subgraphsToIgnore.includes(this.names[idx])) ? undefined : source);
   }
 
   private mergeField(sources: FieldOrUndefinedArray, dest: FieldDefinition<any>) {

@@ -534,7 +534,7 @@ export class FederationMetadata {
     return this.getFederationDirective(keyDirectiveSpec.name);
   }
 
-  overrideDirective(): DirectiveDefinition<{fields: any}> {
+  overrideDirective(): DirectiveDefinition<{from: string}> {
     return this.getFederationDirective(overrideDirectiveSpec.name);
   }
 
@@ -563,7 +563,7 @@ export class FederationMetadata {
   }
 
   allFederationDirectives(): DirectiveDefinition[] {
-    const baseDirectives = [
+    const baseDirectives: DirectiveDefinition<any>[] = [
       this.keyDirective(),
       this.externalDirective(),
       this.requiresDirective(),

@@ -265,7 +265,7 @@ describe("composition involving @override directive", () => {
     expect(errors(result)).toStrictEqual([
       [
         "OVERRIDE_ON_BOTH_FIELD_AND_TYPE",
-        `Field T.a on subgraph "Subgraph1" is marked with @override directive on both the field and the type`,
+        `Field "T.a" on subgraph "Subgraph1" is marked with @override directive on both the field and the type`,
       ],
     ]);
   });
