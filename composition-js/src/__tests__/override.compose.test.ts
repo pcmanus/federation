@@ -9,7 +9,7 @@ import {
 } from "./compose.test";
 
 describe("composition involving @override directive", () => {
-  it("@override whole type", () => {
+  it.skip("@override whole type", () => {
     const subgraph1 = {
       name: "Subgraph1",
       url: "https://Subgraph1",
@@ -232,7 +232,7 @@ describe("composition involving @override directive", () => {
     ]);
   });
 
-  it("override in both type and field error", () => {
+  it.skip("override in both type and field error", () => {
     const subgraph1 = {
       name: "Subgraph1",
       url: "https://Subgraph1",
@@ -315,6 +315,44 @@ describe("composition involving @override directive", () => {
         "INVALID_FIELD_SHARING",
         `Non-shareable field "T.a" is resolved from multiple subgraphs: it is resolved from subgraphs "Subgraph1" and "Subgraph2" and defined as non-shareable in all of them`,
       ]
+    ]);
+  });
+
+  it("override @key field", () => {
+    const subgraph1 = {
+      name: "Subgraph1",
+      url: "https://Subgraph1",
+      typeDefs: gql`
+        type Query {
+          t: T
+        }
+
+        type T @key(fields: "k") {
+          k: ID @override(from: "Subgraph2")
+          a: Int
+        }
+      `,
+    };
+
+    const subgraph2 = {
+      name: "Subgraph2",
+      url: "https://Subgraph2",
+      typeDefs: gql`
+        type T @key(fields: "k") {
+          k: ID
+          b: Int
+        }
+      `,
+    };
+
+    const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
+    expect(result.errors?.length).toBe(1);
+    expect(result.errors).toBeDefined();
+    expect(errors(result)).toStrictEqual([
+      [
+        "OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE",
+        `@override cannot be used on field "T.k" since it already has directive "@key" on it`,
+      ],
     ]);
   });
 

@@ -58,6 +58,7 @@ import {
   FEDERATION_OPERATION_TYPES,
   didYouMean,
   suggestionList,
+  collectTargetFields,
 } from "@apollo/federation-internals";
 import { ASTNode, GraphQLError, DirectiveLocation } from "graphql";
 import {
@@ -833,6 +834,43 @@ class Merger {
     return this.metadata(sourceIdx).isFieldShareable(field);
   }
 
+  private isFieldKey(sourceIdx: number, field: FieldDefinition<any> | undefined): boolean {
+    if (!field) {
+      return false;
+    }
+    const keyDirective = this.metadata(sourceIdx).keyDirective();
+    const directivesOnField = field.appliedDirectivesOf(keyDirective);
+    const directiveOnField = directivesOnField.find(d => d.ofExtension() === field.ofExtension());
+    if (directiveOnField) {
+      return true;
+    }
+
+    const directivesOnType: Directive<any>[] = field.parent.appliedDirectivesOf(keyDirective);
+    const directiveOnType = directivesOnType.find(d => d.ofExtension() === field.parent.ofExtension);
+    if (!directiveOnType) {
+      return false;
+    }
+    const targetFields = collectTargetFields({
+      parentType: field.parent,
+      directive: directiveOnType as any,
+      includeInterfaceFieldsImplementations: true,
+      validate: false,
+    });
+    return targetFields.includes(field);
+  }
+
+  private directiveOnField(field: FieldDefinition<any> | undefined, def: DirectiveDefinition<any> | undefined): boolean {
+    if (!def || !field) {
+      return false;
+    }
+    const directives = field.appliedDirectivesOf(def);
+    const directiveOnField = directives.find(d => d.ofExtension() === field.ofExtension());
+    const directivesOnType: Directive<any>[] = field.parent.appliedDirectivesOf(def);
+    const directiveOnType = directivesOnType.find(d => d.ofExtension() === field.parent.ofExtension);
+
+    return !!directiveOnField || !!directiveOnType;
+  }
+
   private getOverrideDirective(sourceIdx: number, field: FieldDefinition<any>): Directive<any> | undefined {
     // Check the directive on the field, then on the enclosing type.
     const metadata = this.metadata(sourceIdx);
@@ -926,11 +964,24 @@ class Merger {
         ));
         subgraphsToIgnore.push(sourceSubgraphName);
       } else {
-        this.hints.push(new CompositionHint(
-          hintOverriddenFieldCanBeRemoved,
-          `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
-          coordinate,
-        ));
+        // check to make sure that there is no conflicting @key, @provides, or @requires directives
+        const fromIdx = this.names.indexOf(sourceSubgraphName);
+        const fromField = sources[fromIdx];
+        const fromMetadata = this.metadata(fromIdx);
+        const hasKeyDirective = this.isFieldKey(fromIdx, sources[fromIdx]);
+        const hasProvidesDirective = this.directiveOnField(fromField, fromMetadata.providesDirective());
+        const hasRequiresDirective = this.directiveOnField(fromField, fromMetadata.requiresDirective());
+        if (hasKeyDirective || hasProvidesDirective || hasRequiresDirective) {
+          this.errors.push(ERRORS.OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE.err({
+            message: `@override cannot be used on field "${fromField?.coordinate}" since it already has directive "${hasKeyDirective ? "@key" : (hasProvidesDirective ? "@provides" : "@requires")}" on it`,
+          }));
+        } else {
+          this.hints.push(new CompositionHint(
+            hintOverriddenFieldCanBeRemoved,
+            `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
+            coordinate,
+          ));
+        }
         subgraphsToIgnore.push(sourceSubgraphName);
       }
     });

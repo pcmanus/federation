@@ -58,7 +58,7 @@ export const shareableDirectiveSpec = createDirectiveSpecification({
 
 export const overrideDirectiveSpec = createDirectiveSpecification({
   name: 'override',
-  locations: [DirectiveLocation.OBJECT, DirectiveLocation.FIELD_DEFINITION],
+  locations: [DirectiveLocation.FIELD_DEFINITION],
   argumentFct: (schema) => {
     return [{ name: 'from', type: new NonNullType(schema.stringType()) }];
   },
