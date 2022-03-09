@@ -321,11 +321,6 @@ const OVERRIDE_ON_BOTH_FIELD_AND_TYPE = makeCodeDefinition(
   'Field and type are both marked with @override directive. This is not currently supported.',
 );
 
-const OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE = makeCodeDefinition(
-  'OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE',
-  'Override cannot be used in conjunction with specific other directives.',
-);
-
 export const ERROR_CATEGORIES = {
   DIRECTIVE_FIELDS_MISSING_EXTERNAL,
   DIRECTIVE_UNSUPPORTED_ON_INTERFACE,
@@ -383,7 +378,6 @@ export const ERRORS = {
   OVERRIDE_FROM_SELF_ERROR,
   OVERRIDE_SOURCE_HAS_OVERRIDE,
   OVERRIDE_ON_BOTH_FIELD_AND_TYPE,
-  OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE,
 };
 
 const codeDefByCode = Object.values(ERRORS).reduce((obj: {[code: string]: ErrorCodeDefinition}, codeDef: ErrorCodeDefinition) => { obj[codeDef.code] = codeDef; return obj; }, {});
