@@ -972,17 +972,16 @@ class Merger {
         const hasProvidesDirective = this.directiveOnField(fromField, fromMetadata.providesDirective());
         const hasRequiresDirective = this.directiveOnField(fromField, fromMetadata.requiresDirective());
         if (hasKeyDirective || hasProvidesDirective || hasRequiresDirective) {
-          this.errors.push(ERRORS.OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE.err({
-            message: `@override cannot be used on field "${fromField?.coordinate}" since it already has directive "${hasKeyDirective ? "@key" : (hasProvidesDirective ? "@provides" : "@requires")}" on it`,
-          }));
+          fromField?.applyDirective(this.metadata(fromIdx).externalDirective());
         } else {
-          this.hints.push(new CompositionHint(
-            hintOverriddenFieldCanBeRemoved,
-            `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
-            coordinate,
-          ));
+          // only ignore subgraph if we're not adding an external directive
+          subgraphsToIgnore.push(sourceSubgraphName);
         }
-        subgraphsToIgnore.push(sourceSubgraphName);
+        this.hints.push(new CompositionHint(
+          hintOverriddenFieldCanBeRemoved,
+          `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
+          coordinate,
+        ));
       }
     });
     return sources.map((source, idx) => (!source || subgraphsToIgnore.includes(this.names[idx])) ? undefined : source);
