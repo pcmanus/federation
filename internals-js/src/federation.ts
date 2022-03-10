@@ -51,7 +51,7 @@ import {
   ERROR_CATEGORIES,
   ERRORS,
 } from "./error";
-import { computeShareables } from "./sharing";
+import { computeKeys, computeShareables } from "./precompute";
 import {
   CoreSpecDefinition,
   FeatureVersion,
@@ -431,6 +431,7 @@ function checkIfFed2Schema(schema: Schema): boolean {
 export class FederationMetadata {
   private _externalTester?: ExternalTester;
   private _sharingPredicate?: (field: FieldDefinition<CompositeType>) => boolean;
+  private _keysPredicate?: (field: FieldDefinition<CompositeType>) => boolean;
   private _isFed2Schema?: boolean;
 
   constructor(readonly schema: Schema) {
@@ -439,6 +440,7 @@ export class FederationMetadata {
   private onInvalidate() {
     this._externalTester = undefined;
     this._sharingPredicate = undefined;
+    this._keysPredicate = undefined;
     this._isFed2Schema = undefined;
   }
 
@@ -463,6 +465,13 @@ export class FederationMetadata {
     return this._sharingPredicate;
   }
 
+  private keysPredicate(): (field: FieldDefinition<CompositeType>) => boolean {
+    if (!this._keysPredicate) {
+      this._keysPredicate = computeKeys(this.schema);
+    }
+    return this._keysPredicate;
+  }
+
   isFieldExternal(field: FieldDefinition<any> | InputFieldDefinition) {
     return this.externalTester().isExternal(field);
   }
@@ -485,6 +494,10 @@ export class FederationMetadata {
 
   isFieldShareable(field: FieldDefinition<any>): boolean {
     return this.sharingPredicate()(field);
+  }
+
+  isFieldKey(field: FieldDefinition<any>): boolean {
+    return this.keysPredicate()(field);
   }
 
   federationDirectiveNameInSchema(name: string): string {

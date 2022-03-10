@@ -58,7 +58,6 @@ import {
   FEDERATION_OPERATION_TYPES,
   didYouMean,
   suggestionList,
-  collectTargetFields,
 } from "@apollo/federation-internals";
 import { ASTNode, GraphQLError, DirectiveLocation } from "graphql";
 import {
@@ -838,37 +837,7 @@ class Merger {
     if (!field) {
       return false;
     }
-    const keyDirective = this.metadata(sourceIdx).keyDirective();
-    const directivesOnField = field.appliedDirectivesOf(keyDirective);
-    const directiveOnField = directivesOnField.find(d => d.ofExtension() === field.ofExtension());
-    if (directiveOnField) {
-      return true;
-    }
-
-    const directivesOnType: Directive<any>[] = field.parent.appliedDirectivesOf(keyDirective);
-    const directiveOnType = directivesOnType.find(d => d.ofExtension() === field.parent.ofExtension);
-    if (!directiveOnType) {
-      return false;
-    }
-    const targetFields = collectTargetFields({
-      parentType: field.parent,
-      directive: directiveOnType as any,
-      includeInterfaceFieldsImplementations: true,
-      validate: false,
-    });
-    return targetFields.includes(field);
-  }
-
-  private directiveOnField(field: FieldDefinition<any> | undefined, def: DirectiveDefinition<any> | undefined): boolean {
-    if (!def || !field) {
-      return false;
-    }
-    const directives = field.appliedDirectivesOf(def);
-    const directiveOnField = directives.find(d => d.ofExtension() === field.ofExtension());
-    const directivesOnType: Directive<any>[] = field.parent.appliedDirectivesOf(def);
-    const directiveOnType = directivesOnType.find(d => d.ofExtension() === field.parent.ofExtension);
-
-    return !!directiveOnField || !!directiveOnType;
+    return this.metadata(sourceIdx).isFieldKey(field);
   }
 
   private getOverrideDirective(sourceIdx: number, field: FieldDefinition<any>): Directive<any> | undefined {
@@ -894,10 +863,70 @@ class Merger {
     return undefined;
   }
 
+  private overrideHasIncompatibleFields({
+    idx,
+    field,
+    subgraphName,
+    fromIdx,
+    fromField,
+    fromSubgraphName
+  }: {
+    idx: number;
+    field: FieldDefinition<any> | undefined;
+    subgraphName: string;
+    fromIdx: number;
+    fromField: FieldDefinition<any> | undefined;
+    fromSubgraphName: string;
+  }): { result: boolean, conflictingDirective?: string, subgraph?: string } {
+    // helper function to let us know if a given directive exists on a field
+    const directiveOnField = (field: FieldDefinition<any> | undefined, def: DirectiveDefinition<any> | undefined): boolean => {
+      if (!def || !field) {
+        return false;
+      }
+      const directives = field.appliedDirectivesOf(def);
+      const directiveOnField = directives.find(d => d.ofExtension() === field.ofExtension());
+      const directivesOnType: Directive<any>[] = field.parent.appliedDirectivesOf(def);
+      const directiveOnType = directivesOnType.find(d => d.ofExtension() === field.parent.ofExtension);
+
+      return !!directiveOnField || !!directiveOnType;
+    };
+
+    const fromMetadata = this.metadata(fromIdx);
+    if (directiveOnField(fromField, fromMetadata.providesDirective())) {
+      return {
+        result: true,
+        conflictingDirective: fromMetadata.providesDirective().name,
+        subgraph: subgraphName,
+      };
+    }
+
+    if (directiveOnField(fromField, fromMetadata.requiresDirective())) {
+      return {
+        result: true,
+        conflictingDirective: fromMetadata.requiresDirective().name,
+        subgraph: subgraphName,
+      };
+    }
+    if (field && this.isExternal(idx, field)) {
+      return {
+        result: true,
+        conflictingDirective: fromMetadata.externalDirective().name,
+        subgraph: subgraphName,
+      };
+    }
+    if (fromField && this.isExternal(fromIdx, fromField)) {
+      return {
+        result: true,
+        conflictingDirective: fromMetadata.externalDirective().name,
+        subgraph: fromSubgraphName,
+      };
+    }
+    return { result: false };
+  }
   /**
    * Validates whether or not the use of the @override directive is correct.
    * return a list of subgraphs to ignore for the current field
-   * return value is a list of fields that has been filtered to ignore overriden fields
+   * return value is a list of fields that has been filtered to ignore overridden fields
    */
   private validateOverride(sources: FieldOrUndefinedArray, { coordinate }: FieldDefinition<any>): FieldOrUndefinedArray {
     // For any field, we can't have more than one @override directive
@@ -933,6 +962,7 @@ class Merger {
       return acc;
     }, { subgraphsWithOverride: [], subgraphMap: {} });
 
+    // for each subgraph that has an @override directive, check to see if
     subgraphsWithOverride.forEach((subgraphName) => {
       const { overrideDirective } = subgraphMap[subgraphName];
       const sourceSubgraphName = overrideDirective?.arguments()?.from;
@@ -967,21 +997,33 @@ class Merger {
         // check to make sure that there is no conflicting @key, @provides, or @requires directives
         const fromIdx = this.names.indexOf(sourceSubgraphName);
         const fromField = sources[fromIdx];
-        const fromMetadata = this.metadata(fromIdx);
-        const hasKeyDirective = this.isFieldKey(fromIdx, sources[fromIdx]);
-        const hasProvidesDirective = this.directiveOnField(fromField, fromMetadata.providesDirective());
-        const hasRequiresDirective = this.directiveOnField(fromField, fromMetadata.requiresDirective());
-        if (hasKeyDirective || hasProvidesDirective || hasRequiresDirective) {
-          fromField?.applyDirective(this.metadata(fromIdx).externalDirective());
+        const { result: hasIncompatible, conflictingDirective, subgraph } = this.overrideHasIncompatibleFields({
+          idx: subgraphMap[subgraphName].idx,
+          field: sources[subgraphMap[subgraphName].idx],
+          subgraphName,
+          fromIdx: this.names.indexOf(sourceSubgraphName),
+          fromField: sources[fromIdx],
+          fromSubgraphName: sourceSubgraphName,
+        });
+        if (hasIncompatible) {
+          this.errors.push(ERRORS.OVERRIDE_COLLISION_WITH_ANOTHER_DIRECTIVE.err({
+            message: `@override cannot be used on field "${fromField?.coordinate}" on subgraph "${subgraphName}" since "${fromField?.coordinate}" on "${subgraph}" is marked with directive "@${conflictingDirective}"`,
+          }));
         } else {
-          // only ignore subgraph if we're not adding an external directive
-          subgraphsToIgnore.push(sourceSubgraphName);
+          // if we get here, then the @override directive is valid
+          // if the field being overridden is a key, then we need to add an @external directive
+          if (this.isFieldKey(fromIdx, sources[fromIdx])) {
+            fromField?.applyDirective(this.metadata(fromIdx).externalDirective());
+          } else {
+            // only ignore subgraph if we're not adding an @external directive
+            subgraphsToIgnore.push(sourceSubgraphName);
+          }
+          this.hints.push(new CompositionHint(
+            hintOverriddenFieldCanBeRemoved,
+            `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
+            coordinate,
+          ));
         }
-        this.hints.push(new CompositionHint(
-          hintOverriddenFieldCanBeRemoved,
-          `Field "${coordinate}" on subgraph "${sourceSubgraphName}" is overridden. Consider removing it.`,
-          coordinate,
-        ));
       }
     });
     return sources.map((source, idx) => (!source || subgraphsToIgnore.includes(this.names[idx])) ? undefined : source);
