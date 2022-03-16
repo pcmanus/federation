@@ -923,6 +923,7 @@ class Merger {
     }
     return { result: false };
   }
+
   /**
    * Validates whether or not the use of the @override directive is correct.
    * return a list of subgraphs to ignore for the current field

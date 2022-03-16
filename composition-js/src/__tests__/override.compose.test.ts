@@ -1,4 +1,4 @@
-import { printSchema } from "@apollo/federation-internals";
+import { printSchema, printType } from "@apollo/federation-internals";
 import gql from "graphql-tag";
 import "./matchers";
 import {
@@ -41,51 +41,9 @@ describe("composition involving @override directive", () => {
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
     assertCompositionSuccess(result);
 
-    expect(result.supergraphSdl).toMatchInlineSnapshot(`
-      "schema
-        @core(feature: \\"https://specs.apollo.dev/core/v0.2\\")
-        @core(feature: \\"https://specs.apollo.dev/join/v0.2\\", for: EXECUTION)
-      {
-        query: Query
-      }
-
-      directive @core(feature: String!, as: String, for: core__Purpose) repeatable on SCHEMA
-
-      directive @join__field(graph: join__Graph!, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-
-      directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-
-      directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
-
-      directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-
-      enum core__Purpose {
-        \\"\\"\\"
-        \`SECURITY\` features provide metadata necessary to securely resolve fields.
-        \\"\\"\\"
-        SECURITY
-
-        \\"\\"\\"
-        \`EXECUTION\` features provide metadata necessary for operation execution.
-        \\"\\"\\"
-        EXECUTION
-      }
-
-      scalar join__FieldSet
-
-      enum join__Graph {
-        SUBGRAPH1 @join__graph(name: \\"Subgraph1\\", url: \\"https://Subgraph1\\")
-        SUBGRAPH2 @join__graph(name: \\"Subgraph2\\", url: \\"https://Subgraph2\\")
-      }
-
-      type Query
-        @join__type(graph: SUBGRAPH1)
-        @join__type(graph: SUBGRAPH2)
-      {
-        t: T @join__field(graph: SUBGRAPH1)
-      }
-
-      type T
+    const typeT = result.schema.type('T');
+    expect(printType(typeT!)).toMatchInlineSnapshot(`
+      "type T
         @join__type(graph: SUBGRAPH1, key: \\"k\\")
         @join__type(graph: SUBGRAPH2, key: \\"k\\")
       {
@@ -127,51 +85,9 @@ describe("composition involving @override directive", () => {
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
     assertCompositionSuccess(result);
 
-    expect(result.supergraphSdl).toMatchInlineSnapshot(`
-      "schema
-        @core(feature: \\"https://specs.apollo.dev/core/v0.2\\")
-        @core(feature: \\"https://specs.apollo.dev/join/v0.2\\", for: EXECUTION)
-      {
-        query: Query
-      }
-
-      directive @core(feature: String!, as: String, for: core__Purpose) repeatable on SCHEMA
-
-      directive @join__field(graph: join__Graph!, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-
-      directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-
-      directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
-
-      directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-
-      enum core__Purpose {
-        \\"\\"\\"
-        \`SECURITY\` features provide metadata necessary to securely resolve fields.
-        \\"\\"\\"
-        SECURITY
-
-        \\"\\"\\"
-        \`EXECUTION\` features provide metadata necessary for operation execution.
-        \\"\\"\\"
-        EXECUTION
-      }
-
-      scalar join__FieldSet
-
-      enum join__Graph {
-        SUBGRAPH1 @join__graph(name: \\"Subgraph1\\", url: \\"https://Subgraph1\\")
-        SUBGRAPH2 @join__graph(name: \\"Subgraph2\\", url: \\"https://Subgraph2\\")
-      }
-
-      type Query
-        @join__type(graph: SUBGRAPH1)
-        @join__type(graph: SUBGRAPH2)
-      {
-        t: T @join__field(graph: SUBGRAPH1)
-      }
-
-      type T
+    const typeT = result.schema.type('T');
+    expect(printType(typeT!)).toMatchInlineSnapshot(`
+      "type T
         @join__type(graph: SUBGRAPH1, key: \\"k\\")
         @join__type(graph: SUBGRAPH2, key: \\"k\\")
       {
@@ -348,51 +264,9 @@ describe("composition involving @override directive", () => {
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
     assertCompositionSuccess(result);
 
-    expect(result.supergraphSdl).toMatchInlineSnapshot(`
-      "schema
-        @core(feature: \\"https://specs.apollo.dev/core/v0.2\\")
-        @core(feature: \\"https://specs.apollo.dev/join/v0.2\\", for: EXECUTION)
-      {
-        query: Query
-      }
-
-      directive @core(feature: String!, as: String, for: core__Purpose) repeatable on SCHEMA
-
-      directive @join__field(graph: join__Graph!, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-
-      directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-
-      directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
-
-      directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-
-      enum core__Purpose {
-        \\"\\"\\"
-        \`SECURITY\` features provide metadata necessary to securely resolve fields.
-        \\"\\"\\"
-        SECURITY
-
-        \\"\\"\\"
-        \`EXECUTION\` features provide metadata necessary for operation execution.
-        \\"\\"\\"
-        EXECUTION
-      }
-
-      scalar join__FieldSet
-
-      enum join__Graph {
-        SUBGRAPH1 @join__graph(name: \\"Subgraph1\\", url: \\"https://Subgraph1\\")
-        SUBGRAPH2 @join__graph(name: \\"Subgraph2\\", url: \\"https://Subgraph2\\")
-      }
-
-      type Query
-        @join__type(graph: SUBGRAPH1)
-        @join__type(graph: SUBGRAPH2)
-      {
-        t: T @join__field(graph: SUBGRAPH1)
-      }
-
-      type T
+    const typeT = result.schema.type('T');
+    expect(printType(typeT!)).toMatchInlineSnapshot(`
+      "type T
         @join__type(graph: SUBGRAPH1, key: \\"k\\")
         @join__type(graph: SUBGRAPH2, key: \\"k\\")
       {
@@ -433,51 +307,9 @@ describe("composition involving @override directive", () => {
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
     assertCompositionSuccess(result);
 
-    expect(result.supergraphSdl).toMatchInlineSnapshot(`
-      "schema
-        @core(feature: \\"https://specs.apollo.dev/core/v0.2\\")
-        @core(feature: \\"https://specs.apollo.dev/join/v0.2\\", for: EXECUTION)
-      {
-        query: Query
-      }
-
-      directive @core(feature: String!, as: String, for: core__Purpose) repeatable on SCHEMA
-
-      directive @join__field(graph: join__Graph!, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-
-      directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-
-      directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
-
-      directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-
-      enum core__Purpose {
-        \\"\\"\\"
-        \`SECURITY\` features provide metadata necessary to securely resolve fields.
-        \\"\\"\\"
-        SECURITY
-
-        \\"\\"\\"
-        \`EXECUTION\` features provide metadata necessary for operation execution.
-        \\"\\"\\"
-        EXECUTION
-      }
-
-      scalar join__FieldSet
-
-      enum join__Graph {
-        SUBGRAPH1 @join__graph(name: \\"Subgraph1\\", url: \\"https://Subgraph1\\")
-        SUBGRAPH2 @join__graph(name: \\"Subgraph2\\", url: \\"https://Subgraph2\\")
-      }
-
-      type Query
-        @join__type(graph: SUBGRAPH1)
-        @join__type(graph: SUBGRAPH2)
-      {
-        t: T @join__field(graph: SUBGRAPH1)
-      }
-
-      type T
+    const typeT = result.schema.type('T');
+    expect(printType(typeT!)).toMatchInlineSnapshot(`
+      "type T
         @join__type(graph: SUBGRAPH1, key: \\"k\\")
         @join__type(graph: SUBGRAPH2, key: \\"k\\")
       {
@@ -538,60 +370,21 @@ describe("composition involving @override directive", () => {
     const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
     assertCompositionSuccess(result);
 
-    expect(result.supergraphSdl).toMatchInlineSnapshot(`
-      "schema
-        @core(feature: \\"https://specs.apollo.dev/core/v0.2\\")
-        @core(feature: \\"https://specs.apollo.dev/join/v0.2\\", for: EXECUTION)
-      {
-        query: Query
-      }
-
-      directive @core(feature: String!, as: String, for: core__Purpose) repeatable on SCHEMA
-
-      directive @join__field(graph: join__Graph!, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-
-      directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-
-      directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
-
-      directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-
-      enum core__Purpose {
-        \\"\\"\\"
-        \`SECURITY\` features provide metadata necessary to securely resolve fields.
-        \\"\\"\\"
-        SECURITY
-
-        \\"\\"\\"
-        \`EXECUTION\` features provide metadata necessary for operation execution.
-        \\"\\"\\"
-        EXECUTION
-      }
-
-      type E
+    const typeE = result.schema.type('E');
+    expect(printType(typeE!)).toMatchInlineSnapshot(`
+      "type E
         @join__type(graph: SUBGRAPH1)
         @join__type(graph: SUBGRAPH2)
       {
         k: ID @join__field(graph: SUBGRAPH1) @join__field(graph: SUBGRAPH2, external: true)
         a: Int @join__field(graph: SUBGRAPH1)
         b: Int @join__field(graph: SUBGRAPH2)
-      }
+      }"
+    `);
 
-      scalar join__FieldSet
-
-      enum join__Graph {
-        SUBGRAPH1 @join__graph(name: \\"Subgraph1\\", url: \\"https://Subgraph1\\")
-        SUBGRAPH2 @join__graph(name: \\"Subgraph2\\", url: \\"https://Subgraph2\\")
-      }
-
-      type Query
-        @join__type(graph: SUBGRAPH1)
-        @join__type(graph: SUBGRAPH2)
-      {
-        t: T @join__field(graph: SUBGRAPH1)
-      }
-
-      type T
+    const typeT = result.schema.type('T');
+    expect(printType(typeT!)).toMatchInlineSnapshot(`
+      "type T
         @join__type(graph: SUBGRAPH1, key: \\"e { k }\\")
         @join__type(graph: SUBGRAPH2, key: \\"e { k }\\")
       {
