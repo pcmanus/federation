@@ -277,6 +277,80 @@ describe("composition involving @override directive", () => {
     `);
   });
 
+  it("override @key field that breaks composition validation", () => {
+    const subgraph1 = {
+      name: "Subgraph1",
+      url: "https://Subgraph1",
+      typeDefs: gql`
+        type Query {
+          t: T
+        }
+
+        type T @key(fields: "k") {
+          k: ID @override(from: "Subgraph2")
+          a: Int
+        }
+      `,
+    };
+
+    const subgraph2 = {
+      name: "Subgraph2",
+      url: "https://Subgraph2",
+      typeDefs: gql`
+        type Query {
+          otherT: T
+        }
+
+        type T @key(fields: "k") {
+          k: ID
+          b: Int
+        }
+      `,
+    };
+
+    const result = composeAsFed2Subgraphs([subgraph1, subgraph2]);
+    expect(result.errors).toBeDefined();
+    // TODO: This test _should_ break: if we override the key `k` from subgraph2, then that means `k` is not
+    // resolvable by subgraph2. But that means a query starting by `otherT` cannot "jump" to subgraph1 since
+    // it doesn't resolve "k" anymore. And indeed, this currently shows the following 2 errors:
+    //   The following supergraph API query:
+    //   {
+    //     otherT {
+    //       k
+    //     }
+    //   }
+    //   cannot be satisfied by the subgraphs because:
+    //   - from subgraph "Subgraph2":
+    //     - field "T.k" is not resolvable because marked @external.
+    //     - cannot move to subgraph "Subgraph1" using @key(fields: "k") of "T", the key field(s) cannot be resolved from subgraph "Subgraph2".
+    // and:
+    //   The following supergraph API query:
+    //   {
+    //     otherT {
+    //       a
+    //     }
+    //   }
+    //   cannot be satisfied by the subgraphs because:
+    //   - from subgraph "Subgraph2":
+    //     - cannot find field "T.a".
+    //     - cannot move to subgraph "Subgraph1" using @key(fields: "k") of "T", the key field(s) cannot be resolved from subgraph "Subgraph2".
+    //
+    // But unfortunately, I think those errors are a bit confusing for the user in this case. Because it says in particular:
+    //   - from subgraph "Subgraph2": field "T.k" is not resolvable because marked @external
+    // except that "T.k" in "Subgraph2" is _not_ marked @external in the user schema (it is in the subgraphs extracted from the supergraph,
+    // but only because we forced the field @external in the supergraph).
+    //
+    // And I actually think making those errors non-confusing is fairly important to the user-experience of fed 2, so I think we should
+    // make sure we amend the code generating those errors to detect the case where a field is overridden, so the errors above can be
+    // amended to say something like:
+    //   - from subgraph "Subgraph2": field "T.k" is not resolvable because is is overriden by "Subgraph1".
+    // Unfortunately, this imply we preserve "some" information about override in the supergraph and thus probably add a new arg to @join__field.
+
+    expect((errors(result))).toBe(
+      "TODO"
+    );
+  });
+
   it("override field with change to type definition", () => {
     const subgraph1 = {
       name: "Subgraph1",
