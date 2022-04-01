@@ -545,7 +545,7 @@ export class FederationMetadata {
     return this.getFederationDirective(extendsDirectiveSpec.name);
   }
 
-  externalDirective(): DirectiveDefinition<Record<string, never>> {
+  externalDirective(): DirectiveDefinition<{reason: string}> {
     return this.getFederationDirective(externalDirectiveSpec.name);
   }
 

@@ -38,6 +38,9 @@ export const extendsDirectiveSpec = createDirectiveSpecification({
 export const externalDirectiveSpec = createDirectiveSpecification({
   name:'external',
   locations: [DirectiveLocation.OBJECT, DirectiveLocation.FIELD_DEFINITION],
+  argumentFct: (schema) => {
+    return [{ name: 'reason', type: schema.stringType() }];
+  },
 });
 
 export const requiresDirectiveSpec = createDirectiveSpecification({
