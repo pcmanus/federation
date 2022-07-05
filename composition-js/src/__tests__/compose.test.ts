@@ -2943,6 +2943,49 @@ describe('composition', () => {
         'Input object field "A.y" is required in some subgraphs but does not appear in all subgraphs: it is required in subgraph "subgraphB" but does not appear in subgraph "subgraphA"'
       ]]);
     });
+
+    it('massage input type (default) values when some fields of the definition are not merged', () => {
+      const subgraphA = {
+        typeDefs: gql`
+          type Query {
+            q1(a: A): String
+          }
+
+          input A {
+            x: Int
+          }
+        `,
+        name: 'subgraphA',
+      };
+
+      const subgraphB = {
+        typeDefs: gql`
+          type Query {
+            q2(a: A = { x: 1, y: 2 }): String
+          }
+
+          input A {
+            x: Int
+            y: Int
+          }
+        `,
+        name: 'subgraphB',
+      };
+
+      const result = composeAsFed2Subgraphs([subgraphA, subgraphB]);
+      assertCompositionSuccess(result);
+
+      expect(printSchema(result.schema.toAPISchema())).toMatchString(`
+        type Query {
+          q1(a: A): String
+          q2(a: A = {x: 1}): String
+        }
+
+        input A {
+          x: Int
+        }
+      `);
+    });
   });
 
   describe('Union types', () => {
