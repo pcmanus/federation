@@ -263,7 +263,7 @@ async function executeFetch(
   context: ExecutionContext,
   fetch: FetchNode,
   results: ResultMap | (ResultMap | null | undefined)[],
-  _path: ResponsePath,
+  path: ResponsePath,
   traceNode: Trace.QueryPlanNode.FetchNode | null,
 ): Promise<void> {
 
@@ -301,11 +301,12 @@ async function executeFetch(
 
       if (!fetch.requires) {
         const dataReceivedFromService = await sendOperation(
-            context,
-            fetch.operation,
-            variables,
-            fetch.operationName,
-            fetch.operationDocumentNode
+          context,
+          path,
+          fetch.operation,
+          variables,
+          fetch.operationName,
+          fetch.operationDocumentNode,
         );
 
         for (const entity of entities) {
@@ -343,6 +344,7 @@ async function executeFetch(
 
         const dataReceivedFromService = await sendOperation(
             context,
+            path,
             fetch.operation,
             {...variables, representations},
             fetch.operationName,
@@ -386,10 +388,11 @@ async function executeFetch(
   });
   async function sendOperation(
     context: ExecutionContext,
+    path: ResponsePath,
     source: string,
     variables: Record<string, any>,
     operationName: string | undefined,
-    operationDocumentNode?: DocumentNode
+    operationDocumentNode?: DocumentNode,
   ): Promise<ResultMap | void | null> {
     // We declare this as 'any' because it is missing url and method, which
     // GraphQLRequest.http is supposed to have if it exists.
@@ -427,12 +430,12 @@ async function executeFetch(
       },
       incomingRequestContext: context.requestContext,
       context: context.requestContext.context,
-      document: operationDocumentNode
+      document: operationDocumentNode,
     });
 
     if (response.errors) {
       const errors = response.errors.map((error) =>
-        downstreamServiceError(error, fetch.serviceName),
+        downstreamServiceError(error, fetch.serviceName, path),
       );
       context.errors.push(...errors);
     }
@@ -474,7 +477,9 @@ async function executeFetch(
           // to have the default names (Query, Mutation, Subscription) even
           // if the implementing services choose different names, so we override
           // whatever the implementing service reported here.
-          const rootTypeName = defaultRootName(context.operationContext.operation.operation);
+          const rootTypeName = defaultRootName(
+            context.operationContext.operation.operation,
+          );
           traceNode.trace.root?.child?.forEach((child) => {
             child.parentType = rootTypeName;
           });
@@ -686,9 +691,38 @@ function flattenResultsAtPath(value: any, path: ResponsePath): any {
   }
 }
 
+/**
+ * FIXME: this makes a fragile assumption that downstream paths in nested nodes
+ * always start with `['_entities', number]`, and that the response path will
+ * end in `"@"` when fetching/flattening a batch of entities. This may not stay
+ * hold as federation evolves.
+ */
+function mergeErrorPaths(
+  path: ResponsePath,
+  downstreamServiceError: GraphQLFormattedError,
+) {
+    const upstreamPath = path.slice(0);
+    const downstreamPath = downstreamServiceError.path ? downstreamServiceError.path.slice(0) : [];
+
+    if (downstreamPath[0] === '_entities') {
+      // if the last component is "@" then this was a batch fetch/flatten and we
+      // want to preserve the index after `_entities`
+      if (upstreamPath[upstreamPath.length - 1] === '@') {
+        upstreamPath.splice(-1, 1);
+        downstreamPath.splice(0, 1);
+      // otherwise we want to remove both `_entities` and the index
+      } else {
+        downstreamPath.splice(0, 2);
+      }
+    }
+
+    return [...upstreamPath, ...downstreamPath];
+}
+
 function downstreamServiceError(
   originalError: GraphQLFormattedError,
   serviceName: string,
+  path: ResponsePath,
 ) {
   let { message, extensions } = originalError;
 
@@ -698,12 +732,13 @@ function downstreamServiceError(
 
   const errorOptions: GraphQLErrorOptions = {
     originalError: originalError as Error,
+    path: mergeErrorPaths(path, originalError),
     extensions: {
       ...extensions,
       // XXX The presence of a serviceName in extensions is used to
       // determine if this error should be captured for metrics reporting.
       serviceName,
-    }
+    },
   };
 
   const codeDef = errorCodeDef(originalError);
@@ -713,7 +748,10 @@ function downstreamServiceError(
     return new GraphQLError(message, errorOptions);
   }
   // Otherwise, we either use the code we found and know, or default to a general downstream error code.
-  return (codeDef ?? ERRORS.DOWNSTREAM_SERVICE_ERROR).err(message, errorOptions);
+  return (codeDef ?? ERRORS.DOWNSTREAM_SERVICE_ERROR).err(
+    message,
+    errorOptions,
+  );
 }
 
 export const defaultFieldResolverWithAliasSupport: GraphQLFieldResolver<

@@ -151,7 +151,7 @@ describe('executeQueryPlan', () => {
         'errors.0.message',
         'Something went wrong',
       );
-      expect(response).toHaveProperty('errors.0.path', undefined);
+      expect(response).toHaveProperty('errors.0.path', ["me"]);
       expect(response).toHaveProperty(
         'errors.0.extensions.code',
         'UNAUTHENTICATED',
@@ -162,6 +162,138 @@ describe('executeQueryPlan', () => {
       );
       expect(response).not.toHaveProperty('errors.0.extensions.query');
       expect(response).not.toHaveProperty('errors.0.extensions.variables');
+    });
+
+    it(`error paths in joins`, async () => {
+      const s1 = gql`
+        type Query {
+          getA: A
+        }
+
+        type A @key(fields: "id") {
+          id: ID!
+        }
+      `;
+
+      const s2 = gql`
+        type A @key(fields: "id") {
+          id: ID!
+          b: Int
+          c: [D]
+        }
+
+        type D @key(fields: "id") {
+          id: ID!
+        }
+      `;
+
+      const s3 = gql`
+        type D @key(fields: "id") {
+          id: ID!
+          e: Int
+        }
+      `;
+
+      const { serviceMap, schema, queryPlanner } = getFederatedTestingSchema([
+        { name: 'S1', typeDefs: s1 },
+        { name: 'S2', typeDefs: s2 },
+        { name: 'S3', typeDefs: s3 },
+      ]);
+
+      addResolversToSchema(serviceMap['S1'].schema, {
+        Query: {
+          getA() {
+            return { id: '1' };
+          },
+        },
+      });
+
+      addResolversToSchema(serviceMap['S2'].schema, {
+        A: {
+          b() {
+            throw new GraphQLError('Something went wrong');
+          },
+          c() {
+            return [{ id: 'd1' }, { id: 'd2' }];
+          },
+        },
+      });
+
+      addResolversToSchema(serviceMap['S3'].schema, {
+        D: {
+          e() {
+            throw new GraphQLError('Something went wrong');
+          },
+        },
+      });
+
+      const operation = parseOp(
+        `
+        query {
+          getA {
+            b
+            c {
+              e
+            }
+          }
+        }
+        `,
+        schema,
+      );
+
+      const queryPlan = buildPlan(operation, queryPlanner);
+
+      const response = await executePlan(
+        queryPlan,
+        operation,
+        undefined,
+        schema,
+        serviceMap,
+      );
+
+      const errors = response?.errors?.map((e) => e.toJSON());
+
+      expect(errors).toMatchInlineSnapshot(`
+        Array [
+          Object {
+            "extensions": Object {
+              "code": "DOWNSTREAM_SERVICE_ERROR",
+              "serviceName": "S2",
+            },
+            "message": "Something went wrong",
+            "path": Array [
+              "getA",
+              "b",
+            ],
+          },
+          Object {
+            "extensions": Object {
+              "code": "DOWNSTREAM_SERVICE_ERROR",
+              "serviceName": "S3",
+            },
+            "message": "Something went wrong",
+            "path": Array [
+              "getA",
+              "c",
+              0,
+              "e",
+            ],
+          },
+          Object {
+            "extensions": Object {
+              "code": "DOWNSTREAM_SERVICE_ERROR",
+              "serviceName": "S3",
+            },
+            "message": "Something went wrong",
+            "path": Array [
+              "getA",
+              "c",
+              1,
+              "e",
+            ],
+          },
+        ]
+      `);
     });
 
     it(`should not send request to downstream services when all entities are undefined`, async () => {
