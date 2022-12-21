@@ -517,19 +517,23 @@ async function executeFetch(
  * an error in a subgraph fetch, we can use the index in the error's path
  * (e.g. `["_entities", 2, "boom"]`) to look up the appropriate "hydrated" path
  * prefix. The result is something like `["foo", 1, "bar", 2, "boom"]`.
+ *
+ * The returned function is lazy — if we don't encounter errors and it's never
+ * called, then we never process the response data to hydrate the paths.
  */
 function makeErrorPathHelper(path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
-  const hydratedPaths: ResponsePath[] = [];
+  let hydratedPaths: ResponsePath[] | undefined;
 
-  makeErrorPathHelperIterator([], path, data, hydratedPaths);
-
-  return (path: GraphQLErrorOptions['path']) => {
-    const errorPath = path ?? [];
-    if (errorPath[0] === '_entities' && typeof errorPath[1] === 'number') {
+  return (errorPath: GraphQLErrorOptions['path']) => {
+    if (!hydratedPaths) {
+      hydratedPaths = [];
+      makeErrorPathHelperIterator([], path, data, hydratedPaths);
+    }
+    if (errorPath?.[0] === '_entities' && typeof errorPath[1] === 'number') {
       const hydratedPath = hydratedPaths[errorPath[1]] ?? []
       return [...hydratedPath, ...errorPath.slice(2)];
     } else {
-      return errorPath.slice(0);
+      return errorPath?.slice(0);
     }
   };
 }
