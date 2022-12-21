@@ -165,67 +165,85 @@ describe('executeQueryPlan', () => {
     });
 
     it(`error paths in joins`, async () => {
-      const s1 = gql`
-        type Query {
-          getA: A
-        }
+      const s1 = {
+        name: 'S1',
+        typeDefs: gql`
+          type Query {
+            getA: A
+          }
 
-        type A @key(fields: "id") {
-          id: ID!
-        }
-      `;
+          type A @key(fields: "id") {
+            id: ID!
+          }
+        `,
+        resolvers: {
+          Query: {
+            getA() {
+              return { id: '1' };
+            },
+          },
+        },
+      };
 
-      const s2 = gql`
-        type A @key(fields: "id") {
-          id: ID!
-          b: Int
-          c: [D]
-        }
+      const s2 = {
+        name: 'S2',
+        typeDefs: gql`
+          type A @key(fields: "id") {
+            id: ID!
+            b: Int
+            c: [D]
+            g: Int! # will return null
+          }
 
-        type D @key(fields: "id") {
-          id: ID!
-        }
-      `;
+          type D @key(fields: "id") {
+            id: ID!
+          }
+        `,
+        resolvers: {
+          A: {
+            b() {
+              throw new GraphQLError('Something went wrong');
+            },
+            c() {
+              return [{ id: 'd1' }, { id: 'd2' }];
+            },
+            g() {
+              return null;
+            },
+          },
+        },
+      };
 
-      const s3 = gql`
-        type D @key(fields: "id") {
-          id: ID!
-          e: Int
-        }
-      `;
+      const s3 = {
+        name: 'S3',
+        typeDefs: gql`
+          type D @key(fields: "id") {
+            id: ID!
+            e: Int
+            f: [A]
+          }
+
+          type A @key(fields: "id") {
+            id: ID!
+          }
+        `,
+        resolvers: {
+          D: {
+            e() {
+              throw new GraphQLError('Something went wrong');
+            },
+            f() {
+              return [{ id: 'a' }];
+            },
+          },
+        },
+      };
 
       const { serviceMap, schema, queryPlanner } = getFederatedTestingSchema([
-        { name: 'S1', typeDefs: s1 },
-        { name: 'S2', typeDefs: s2 },
-        { name: 'S3', typeDefs: s3 },
+        s1,
+        s2,
+        s3,
       ]);
-
-      addResolversToSchema(serviceMap['S1'].schema, {
-        Query: {
-          getA() {
-            return { id: '1' };
-          },
-        },
-      });
-
-      addResolversToSchema(serviceMap['S2'].schema, {
-        A: {
-          b() {
-            throw new GraphQLError('Something went wrong');
-          },
-          c() {
-            return [{ id: 'd1' }, { id: 'd2' }];
-          },
-        },
-      });
-
-      addResolversToSchema(serviceMap['S3'].schema, {
-        D: {
-          e() {
-            throw new GraphQLError('Something went wrong');
-          },
-        },
-      });
 
       const operation = parseOp(
         `
@@ -234,6 +252,9 @@ describe('executeQueryPlan', () => {
             b
             c {
               e
+              f {
+                g
+              }
             }
           }
         }
@@ -290,6 +311,36 @@ describe('executeQueryPlan', () => {
               "c",
               1,
               "e",
+            ],
+          },
+          Object {
+            "extensions": Object {
+              "code": "DOWNSTREAM_SERVICE_ERROR",
+              "serviceName": "S2",
+            },
+            "message": "Cannot return null for non-nullable field A.g.",
+            "path": Array [
+              "getA",
+              "c",
+              0,
+              "f",
+              0,
+              "g",
+            ],
+          },
+          Object {
+            "extensions": Object {
+              "code": "DOWNSTREAM_SERVICE_ERROR",
+              "serviceName": "S2",
+            },
+            "message": "Cannot return null for non-nullable field A.g.",
+            "path": Array [
+              "getA",
+              "c",
+              1,
+              "f",
+              0,
+              "g",
             ],
           },
         ]

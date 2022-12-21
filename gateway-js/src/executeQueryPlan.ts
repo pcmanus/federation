@@ -85,6 +85,7 @@ export async function executeQueryPlan(
           data!,
           [],
           captureTraces,
+          data!
         );
         if (captureTraces) {
           requestContext.metrics!.queryPlanTrace = traceNode;
@@ -175,6 +176,7 @@ async function executeNode(
   results: ResultMap | ResultMap[],
   path: ResponsePath,
   captureTraces: boolean,
+  completeResults: ResultMap
 ): Promise<Trace.QueryPlanNode> {
   if (!results) {
     // XXX I don't understand `results` threading well enough to understand when this happens
@@ -196,6 +198,7 @@ async function executeNode(
           results,
           path,
           captureTraces,
+          completeResults,
         );
         traceNode.nodes.push(childTraceNode!);
       }
@@ -203,8 +206,15 @@ async function executeNode(
     }
     case 'Parallel': {
       const childTraceNodes = await Promise.all(
-        node.nodes.map(async childNode =>
-          executeNode(context, childNode, results, path, captureTraces),
+        node.nodes.map(async (childNode) =>
+          executeNode(
+            context,
+            childNode,
+            results,
+            path,
+            captureTraces,
+            completeResults,
+          ),
         ),
       );
       return new Trace.QueryPlanNode({
@@ -228,6 +238,7 @@ async function executeNode(
             flattenResultsAtPath(results, node.path),
             [...path, ...node.path],
             captureTraces,
+            completeResults,
           ),
         }),
       });
@@ -244,6 +255,7 @@ async function executeNode(
           results,
           path,
           captureTraces ? traceNode : null,
+          completeResults,
         );
       } catch (error) {
         context.errors.push(error);
@@ -265,6 +277,7 @@ async function executeFetch(
   results: ResultMap | (ResultMap | null | undefined)[],
   path: ResponsePath,
   traceNode: Trace.QueryPlanNode.FetchNode | null,
+  completeResults: ResultMap
 ): Promise<void> {
 
   const logger = context.requestContext.logger || console;
@@ -420,6 +433,8 @@ async function executeFetch(
       traceNode.sentTime = dateToProtoTimestamp(new Date());
     }
 
+    const errorPathHelper = makeErrorPathHelper(path, completeResults);
+
     const response = await service.process({
       kind: GraphQLDataSourceRequestKind.INCOMING_OPERATION,
       request: {
@@ -435,7 +450,7 @@ async function executeFetch(
 
     if (response.errors) {
       const errors = response.errors.map((error) =>
-        downstreamServiceError(error, fetch.serviceName, path),
+        downstreamServiceError(error, fetch.serviceName, errorPathHelper),
       );
       context.errors.push(...errors);
     }
@@ -489,6 +504,70 @@ async function executeFetch(
     }
 
     return response.data;
+  }
+}
+
+/**
+ * This is inspired by Apollo Router's implementation. Given a path like:
+ *
+ * `["foo", "@", "bar", "@"]`
+ *
+ * and the response data collected so far, this function generates a list of
+ * "hydrated" paths, replacing the `"@"` with array indices. When we encounter
+ * an error in a subgraph fetch, we can use the index in the error's path
+ * (e.g. `["_entities", 2, "boom"]`) to look up the appropriate "hydrated" path
+ * prefix. The result is something like `["foo", 1, "bar", 2, "boom"]`.
+ */
+function makeErrorPathHelper(path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
+  const hydratedPaths: ResponsePath[] = [];
+
+  makeErrorPathHelperIterator([], path, data, hydratedPaths);
+
+  return (path: GraphQLErrorOptions['path']) => {
+    const errorPath = path ?? [];
+    if (errorPath[0] === '_entities' && typeof errorPath[1] === 'number') {
+      const hydratedPath = hydratedPaths[errorPath[1]] ?? []
+      return [...hydratedPath, ...errorPath.slice(2)];
+    } else {
+      return errorPath.slice(0);
+    }
+  };
+}
+
+function makeErrorPathHelperIterator(
+  parent: ResponsePath,
+  path: ResponsePath,
+  data: ResultMap,
+  result: ResponsePath[],
+) {
+  const head = path[0];
+  if (head == null) {
+    result.push(parent.slice(0));
+  } else if (head === '@') {
+    if (Array.isArray(data)) {
+      for (const [i, value] of data.entries()) {
+        parent.push(i);
+        makeErrorPathHelperIterator(parent, path.slice(1), value, result);
+        parent.pop();
+      }
+    }
+  } else if (typeof head === 'string') {
+    if (Array.isArray(data)) {
+      for (const [i, value] of data.entries()) {
+        parent.push(i);
+        makeErrorPathHelperIterator(parent, path, value, result);
+        parent.pop();
+      }
+    } else {
+      if (head in data) {
+        const value = data[head];
+        parent.push(head);
+        makeErrorPathHelperIterator(parent, path.slice(1), value, result);
+        parent.pop();
+      }
+    }
+  } else {
+    assert(false, `unknown path part "${head}"`);
   }
 }
 
@@ -691,40 +770,15 @@ function flattenResultsAtPath(value: any, path: ResponsePath): any {
   }
 }
 
-/**
- * FIXME: this makes a fragile assumption that downstream paths in nested nodes
- * always start with `['_entities', number]`, and that the response path will
- * end in `"@"` when fetching/flattening a batch of entities. This may not stay
- * hold as federation evolves.
- */
-function mergeErrorPaths(
-  path: ResponsePath,
-  downstreamServiceError: GraphQLFormattedError,
-) {
-    const upstreamPath = path.slice(0);
-    const downstreamPath = downstreamServiceError.path ? downstreamServiceError.path.slice(0) : [];
-
-    if (downstreamPath[0] === '_entities') {
-      // if the last component is "@" then this was a batch fetch/flatten and we
-      // want to preserve the index after `_entities`
-      if (upstreamPath[upstreamPath.length - 1] === '@') {
-        upstreamPath.splice(-1, 1);
-        downstreamPath.splice(0, 1);
-      // otherwise we want to remove both `_entities` and the index
-      } else {
-        downstreamPath.splice(0, 2);
-      }
-    }
-
-    return [...upstreamPath, ...downstreamPath];
-}
-
 function downstreamServiceError(
   originalError: GraphQLFormattedError,
   serviceName: string,
-  path: ResponsePath,
+  errorPathHelper: (
+    path: GraphQLErrorOptions['path'],
+  ) => GraphQLErrorOptions['path'],
 ) {
-  let { message, extensions } = originalError;
+  let { message } = originalError;
+  const { extensions } = originalError;
 
   if (!message) {
     message = `Error while fetching subquery from service "${serviceName}"`;
@@ -732,7 +786,7 @@ function downstreamServiceError(
 
   const errorOptions: GraphQLErrorOptions = {
     originalError: originalError as Error,
-    path: mergeErrorPaths(path, originalError),
+    path: errorPathHelper(originalError.path),
     extensions: {
       ...extensions,
       // XXX The presence of a serviceName in extensions is used to
