@@ -433,8 +433,6 @@ async function executeFetch(
       traceNode.sentTime = dateToProtoTimestamp(new Date());
     }
 
-    const errorPathHelper = makeErrorPathHelper(path, completeResults);
-
     const response = await service.process({
       kind: GraphQLDataSourceRequestKind.INCOMING_OPERATION,
       request: {
@@ -449,6 +447,8 @@ async function executeFetch(
     });
 
     if (response.errors) {
+      const errorPathHelper = makeErrorPathHelper(fetch, path, completeResults);
+
       const errors = response.errors.map((error) =>
         downstreamServiceError(error, fetch.serviceName, errorPathHelper),
       );
@@ -523,17 +523,13 @@ async function executeFetch(
  * The returned function is lazy — if we don't encounter errors and it's never
  * called, then we never process the response data to hydrate the paths.
  */
-function makeErrorPathHelper(path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
-  let hydratedPaths: ResponsePath[] | undefined;
+function makeErrorPathHelper(fetch: FetchNode, path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
+  const hydratedPaths: ResponsePath[] = [];
+  makeErrorPathHelperIterator([], path, data, hydratedPaths);
 
   return (errorPath: GraphQLErrorOptions['path']) => {
-    if (!hydratedPaths) {
-      hydratedPaths = [];
-      makeErrorPathHelperIterator([], path, data, hydratedPaths);
-    }
-
-    if (errorPath?.[0] === '_entities' && typeof errorPath[1] === 'number') {
-      const hydratedPath = hydratedPaths[errorPath[1]] ?? []
+    if (fetch.requires && typeof errorPath?.[1] === 'number') {
+      const hydratedPath = hydratedPaths[errorPath[1]] ?? [];
       return [...hydratedPath, ...errorPath.slice(2)];
     } else {
       return errorPath?.slice();
