@@ -510,13 +510,15 @@ async function executeFetch(
 /**
  * This is inspired by Apollo Router's implementation. Given a path like:
  *
- * `["foo", "@", "bar", "@"]`
+ *    ["foo", "@", "bar", "@"]
  *
  * and the response data collected so far, this function generates a list of
- * "hydrated" paths, replacing the `"@"` with array indices. When we encounter
- * an error in a subgraph fetch, we can use the index in the error's path
- * (e.g. `["_entities", 2, "boom"]`) to look up the appropriate "hydrated" path
- * prefix. The result is something like `["foo", 1, "bar", 2, "boom"]`.
+ * "hydrated" paths, replacing the `"@"` with array indices from the actual
+ * data. When we encounter an error in a subgraph fetch, we can use the index in
+ * the error's path (e.g. `["_entities", 2, "boom"]`) to look up the appropriate
+ * "hydrated" path prefix. The result is something like
+ *
+ *    ["foo", 1, "bar", 2, "boom"]
  *
  * The returned function is lazy — if we don't encounter errors and it's never
  * called, then we never process the response data to hydrate the paths.
@@ -529,11 +531,12 @@ function makeErrorPathHelper(path: ResponsePath, data: ResultMap): (path: GraphQ
       hydratedPaths = [];
       makeErrorPathHelperIterator([], path, data, hydratedPaths);
     }
+
     if (errorPath?.[0] === '_entities' && typeof errorPath[1] === 'number') {
       const hydratedPath = hydratedPaths[errorPath[1]] ?? []
       return [...hydratedPath, ...errorPath.slice(2)];
     } else {
-      return errorPath?.slice(0);
+      return errorPath?.slice();
     }
   };
 }
