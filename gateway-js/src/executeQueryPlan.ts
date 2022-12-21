@@ -524,11 +524,16 @@ async function executeFetch(
  * called, then we never process the response data to hydrate the paths.
  */
 function makeErrorPathHelper(fetch: FetchNode, path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
-  const hydratedPaths: ResponsePath[] = [];
-  makeErrorPathHelperIterator([], path, data, hydratedPaths);
+  let hydratedPaths: ResponsePath[] | undefined;
 
   return (errorPath: GraphQLErrorOptions['path']) => {
     if (fetch.requires && typeof errorPath?.[1] === 'number') {
+      // only generate paths if we need to look them up via entity index
+      if (!hydratedPaths) {
+        hydratedPaths = [];
+        makeErrorPathHelperIterator([], path, data, hydratedPaths);
+      }
+
       const hydratedPath = hydratedPaths[errorPath[1]] ?? [];
       return [...hydratedPath, ...errorPath.slice(2)];
     } else {
