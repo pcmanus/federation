@@ -11,7 +11,6 @@ import {
   isObjectType,
   isInterfaceType,
   GraphQLErrorOptions,
-  DocumentNode,
 } from 'graphql';
 import { Trace, google } from '@apollo/usage-reporting-protobuf';
 import { GraphQLDataSource, GraphQLDataSourceRequestKind } from './datasources/types';
@@ -39,6 +38,24 @@ export type ServiceMap = {
 };
 
 type ResultMap = Record<string, any>;
+
+/**
+ * Represents some "cursor" within the full result, or put another way, a path into the full result and where it points to.
+ *
+ * Note that results can include lists and the the `path` considered can traverse those lists (the path will have a '@' character) so
+ * the data pointed by a cursor is not necessarily a single "branch" of the full results, but is in general a flattened list of all
+ * the sub-branches pointed by the path.
+ */
+type ResultCursor = {
+  // Path into `fullResult` this cursor is pointing at.
+  path: ResponsePath,
+
+  // The data pointed by this cursor.
+  data: ResultMap | ResultMap[],
+
+  // The full result .
+  fullResult: ResultMap,
+}
 
 interface ExecutionContext {
   queryPlan: QueryPlan;
@@ -72,7 +89,7 @@ export async function executeQueryPlan(
         errors,
       };
 
-      let data: ResultMap | undefined | null = Object.create(null);
+      const unfilteredData: ResultMap = Object.create(null);
 
       const captureTraces = !!(
           requestContext.metrics && requestContext.metrics.captureTraces
@@ -82,10 +99,12 @@ export async function executeQueryPlan(
         const traceNode = await executeNode(
           context,
           queryPlan.node,
-          data!,
-          [],
+          {
+            path: [],
+            data: unfilteredData,
+            fullResult: unfilteredData,
+          },
           captureTraces,
-          data!
         );
         if (captureTraces) {
           requestContext.metrics!.queryPlanTrace = traceNode;
@@ -98,6 +117,7 @@ export async function executeQueryPlan(
         // only explicitly requested fields are included and field ordering follows
         // the original query.
         // It is also used to allow execution of introspection queries though.
+        let data;
         try {
           const schema = operationContext.schema;
           ({ data } = await execute({
@@ -109,7 +129,7 @@ export async function executeQueryPlan(
                 ...Object.values(operationContext.fragments),
               ],
             },
-            rootValue: data,
+            rootValue: unfilteredData,
             variableValues: requestContext.request.variables,
             // See also `wrapSchemaWithAliasResolver` in `gateway-js/src/index.ts`.
             fieldResolver: defaultFieldResolverWithAliasSupport,
@@ -173,12 +193,10 @@ export async function executeQueryPlan(
 async function executeNode(
   context: ExecutionContext,
   node: PlanNode,
-  results: ResultMap | ResultMap[],
-  path: ResponsePath,
+  currentCursor: ResultCursor | undefined,
   captureTraces: boolean,
-  completeResults: ResultMap
 ): Promise<Trace.QueryPlanNode> {
-  if (!results) {
+  if (!currentCursor) {
     // XXX I don't understand `results` threading well enough to understand when this happens
     //     and if this corresponds to a real query plan node that should be reported or not.
     //
@@ -195,10 +213,8 @@ async function executeNode(
         const childTraceNode = await executeNode(
           context,
           childNode,
-          results,
-          path,
+          currentCursor,
           captureTraces,
-          completeResults,
         );
         traceNode.nodes.push(childTraceNode!);
       }
@@ -210,10 +226,8 @@ async function executeNode(
           executeNode(
             context,
             childNode,
-            results,
-            path,
+            currentCursor,
             captureTraces,
-            completeResults,
           ),
         ),
       );
@@ -235,10 +249,8 @@ async function executeNode(
           node: await executeNode(
             context,
             node.node,
-            flattenResultsAtPath(results, node.path),
-            [...path, ...node.path],
+            moveIntoCursor(currentCursor, node.path),
             captureTraces,
-            completeResults,
           ),
         }),
       });
@@ -252,10 +264,8 @@ async function executeNode(
         await executeFetch(
           context,
           node,
-          results,
-          path,
+          currentCursor,
           captureTraces ? traceNode : null,
-          completeResults,
         );
       } catch (error) {
         context.errors.push(error);
@@ -274,10 +284,8 @@ async function executeNode(
 async function executeFetch(
   context: ExecutionContext,
   fetch: FetchNode,
-  results: ResultMap | (ResultMap | null | undefined)[],
-  path: ResponsePath,
+  currentCursor: ResultCursor,
   traceNode: Trace.QueryPlanNode.FetchNode | null,
-  completeResults: ResultMap
 ): Promise<void> {
 
   const logger = context.requestContext.logger || console;
@@ -290,11 +298,11 @@ async function executeFetch(
       }
 
       let entities: ResultMap[];
-      if (Array.isArray(results)) {
+      if (Array.isArray(currentCursor.data)) {
         // Remove null or undefined entities from the list
-        entities = results.filter(isNotNullOrUndefined);
+        entities = currentCursor.data.filter(isNotNullOrUndefined);
       } else {
-        entities = [results];
+        entities = [currentCursor.data];
       }
 
       if (entities.length < 1) return;
@@ -313,14 +321,7 @@ async function executeFetch(
       }
 
       if (!fetch.requires) {
-        const dataReceivedFromService = await sendOperation(
-          context,
-          path,
-          fetch.operation,
-          variables,
-          fetch.operationName,
-          fetch.operationDocumentNode,
-        );
+        const dataReceivedFromService = await sendOperation(variables);
 
         for (const entity of entities) {
           deepMerge(entity, withFetchRewrites(dataReceivedFromService, fetch.outputRewrites));
@@ -355,14 +356,7 @@ async function executeFetch(
           throw new Error(`Variables cannot contain key "representations"`);
         }
 
-        const dataReceivedFromService = await sendOperation(
-            context,
-            path,
-            fetch.operation,
-            {...variables, representations},
-            fetch.operationName,
-            fetch.operationDocumentNode
-        );
+        const dataReceivedFromService = await sendOperation({...variables, representations});
 
         if (!dataReceivedFromService) {
           return;
@@ -399,13 +393,9 @@ async function executeFetch(
       span.end();
     }
   });
+
   async function sendOperation(
-    context: ExecutionContext,
-    path: ResponsePath,
-    source: string,
     variables: Record<string, any>,
-    operationName: string | undefined,
-    operationDocumentNode?: DocumentNode,
   ): Promise<ResultMap | void | null> {
     // We declare this as 'any' because it is missing url and method, which
     // GraphQLRequest.http is supposed to have if it exists.
@@ -436,18 +426,18 @@ async function executeFetch(
     const response = await service.process({
       kind: GraphQLDataSourceRequestKind.INCOMING_OPERATION,
       request: {
-        query: source,
+        query: fetch.operation,
         variables,
-        operationName,
+        operationName: fetch.operationName,
         http,
       },
       incomingRequestContext: context.requestContext,
       context: context.requestContext.context,
-      document: operationDocumentNode,
+      document: fetch.operationDocumentNode,
     });
 
     if (response.errors) {
-      const errorPathHelper = makeErrorPathHelper(fetch, path, completeResults);
+      const errorPathHelper = makeErrorPathHelper(fetch, currentCursor);
 
       const errors = response.errors.map((error) =>
         downstreamServiceError(error, fetch.serviceName, errorPathHelper),
@@ -523,7 +513,7 @@ async function executeFetch(
  * The returned function is lazy — if we don't encounter errors and it's never
  * called, then we never process the response data to hydrate the paths.
  */
-function makeErrorPathHelper(fetch: FetchNode, path: ResponsePath, data: ResultMap): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
+function makeErrorPathHelper(fetch: FetchNode, cursor: ResultCursor): (path: GraphQLErrorOptions['path']) => GraphQLErrorOptions['path'] {
   let hydratedPaths: ResponsePath[] | undefined;
 
   return (errorPath: GraphQLErrorOptions['path']) => {
@@ -531,7 +521,7 @@ function makeErrorPathHelper(fetch: FetchNode, path: ResponsePath, data: ResultM
       // only generate paths if we need to look them up via entity index
       if (!hydratedPaths) {
         hydratedPaths = [];
-        makeErrorPathHelperIterator([], path, data, hydratedPaths);
+        makeErrorPathHelperIterator([], cursor.path, cursor.fullResult, hydratedPaths);
       }
 
       const hydratedPath = hydratedPaths[errorPath[1]] ?? [];
@@ -766,7 +756,16 @@ function doesTypeConditionMatch(
   return false;
 }
 
-function flattenResultsAtPath(value: any, path: ResponsePath): any {
+function moveIntoCursor(cursor: ResultCursor, pathInCursor: ResponsePath): ResultCursor | undefined {
+  const data = flattenResultsAtPath(cursor.data, pathInCursor);
+  return data ? {
+    path: cursor.path.concat(pathInCursor),
+    data,
+    fullResult: cursor.fullResult,
+  } : undefined;
+}
+
+function flattenResultsAtPath(value: ResultCursor['data'] | undefined | null, path: ResponsePath): ResultCursor['data'] | undefined | null {
   if (path.length === 0) return value;
   if (value === undefined || value === null) return value;
 
@@ -774,6 +773,11 @@ function flattenResultsAtPath(value: any, path: ResponsePath): any {
   if (current === '@') {
     return value.flatMap((element: any) => flattenResultsAtPath(element, rest));
   } else {
+    assert(typeof current === 'string', () => `Unexpected ${typeof current} found in path`);
+    assert(!Array.isArray(value), () => `Unexpected array in result for path element ${current}`);
+    // Note that this typecheck because `value[current]` is of type `any` and so the typechecker "trusts us", but in
+    // practice this only work because we use this on path that do not point to leaf types, and the `value[current]`
+    // is never a base type (non-object nor null/undefined).
     return flattenResultsAtPath(value[current], rest);
   }
 }
